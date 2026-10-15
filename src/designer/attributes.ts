@@ -62,6 +62,12 @@ export function setAttribute(node: PrismaNode, name: string, value: string): boo
     return false;
   }
 
+  // `<script>` y `<style>` se conservan como bloques opacos: no son nodos
+  // visuales y sus etiquetas de apertura no se editan desde el diseñador.
+  if (node.tag === "script" || node.tag === "style") {
+    return false;
+  }
+
   const existing = findAttribute(node, name);
   const raw = `${existing?.name ?? name}="${escapeAttributeValue(value)}"`;
 

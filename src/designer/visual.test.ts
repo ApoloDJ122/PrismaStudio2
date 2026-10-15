@@ -22,6 +22,15 @@ function roots(html: string) {
 }
 
 describe("M2.2.1 separación visual/técnico", () => {
+  it("solo ofrece edición de texto para contenido representado como nodos de texto", () => {
+    const doc = roots("<body><p>texto<!-- comentario --></p><textarea>valor</textarea><h1>título</h1></body>");
+    const body = bodyOf(doc);
+    ok(body !== null);
+    ok(!isSimpleTextElement(body!.children[0]!));
+    ok(!isSimpleTextElement(body!.children[1]!));
+    ok(isSimpleTextElement(body!.children[2]!));
+  });
+
   it("marca como técnicas las etiquetas del documento, no las del diseño", () => {
     ok(isTechnicalTag("html"));
     ok(isTechnicalTag("head"));

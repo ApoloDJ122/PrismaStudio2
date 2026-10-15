@@ -15,9 +15,11 @@ import type { DocumentModel, ProjectModel } from "../analysis/types";
 import {
   applyMove,
   deleteNode as deleteNodePure,
+  duplicateNode as duplicateNodePure,
   insertElement,
   positionSelector,
   reorderNode,
+  removeNodeAttribute as removeNodeAttributePure,
   setNodeAttribute as setNodeAttributePure,
   setNodeText as setNodeTextPure,
 } from "../designer/edit";
@@ -32,7 +34,7 @@ import { designClassOf } from "../designer/class";
 import { removeAttribute } from "../designer/attributes";
 import { findById, serialize } from "../designer/tree";
 import { canvasContainerId, canvasNodes as visualCanvasNodes } from "../designer/visual";
-import { createIdFactory } from "../designer/identity";
+import { createIdFactory, createIdFactoryAfter } from "../designer/identity";
 
 type IdFactory = { next: () => PrismaId };
 import type { PrismaId, PrismaNode } from "../designer/types";
@@ -92,8 +94,10 @@ export interface DesignerState {
   useDefaultCssTarget: () => boolean;
   setElementCssTarget: (nodeId: PrismaId, target: CssTarget | null) => void;
   deleteNode: (nodeId: PrismaId) => void;
+  duplicateNode: (nodeId: PrismaId) => void;
   updateText: (nodeId: PrismaId, text: string) => void;
   setNodeAttr: (nodeId: PrismaId, name: string, value: string) => void;
+  removeNodeAttr: (nodeId: PrismaId, name: string) => void;
   setBooleanAttr: (nodeId: PrismaId, name: string, enabled: boolean) => void;
   setNodeStyle: (nodeId: PrismaId, property: string, value: string) => void;
   /** Valor CSS de una propiedad para el nodo, o `null` si no tiene. */
@@ -103,7 +107,8 @@ export interface DesignerState {
   ensureExternalCss: (href: string, nodeId?: PrismaId | null) => void;
   applyToBuffers: (workspace: {
     writeBuffer: (path: string, content: string) => void;
-    saveBuffer?: (path: string) => Promise<string | null>;
+    saveBuffer: (path: string) => Promise<string | null>;
+    ensureBuffer: (path: string) => Promise<string | null>;
   }) => Promise<boolean>;
   refresh: () => void;
 }
@@ -120,6 +125,7 @@ export function useDesigner(
     writeBuffer: (path: string, content: string) => void;
     saveBuffer?: (path: string) => Promise<string | null>;
     buffers?: Record<string, any>;
+    ensureBuffer?: (path: string) => Promise<string | null>;
   },
 ): DesignerState {
   const { project } = projectState;
@@ -147,6 +153,7 @@ export function useDesigner(
     index: number;
     skipNext: boolean;
   }>({ entries: [], index: -1, skipNext: false });
+  const loadRequestRef = useRef(0);
 
   // Los puentes `options`/`workspace` llegan como objetos nuevos en cada render.
   // Se guardan en referencias para que la recarga solo dependa del archivo
@@ -210,6 +217,7 @@ export function useDesigner(
   }, [restoreHistory]);
 
   const loadFromActive = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     const ws = workspaceRef.current;
     const opts = optionsRef.current;
     const path = ws?.activePath ?? null;
@@ -223,6 +231,7 @@ export function useDesigner(
       setCssTarget(null);
       setElementCssTargets({});
       setAppliedSnapshot("");
+      setIsBusy(false);
       return;
     }
     const isHtmlLike = /\.html?$|\.blade\.php$/i.test(path);
@@ -234,6 +243,7 @@ export function useDesigner(
       setCssTarget(null);
       setElementCssTargets({});
       setAppliedSnapshot("");
+      setIsBusy(false);
       return;
     }
     setIsBusy(true);
@@ -246,7 +256,7 @@ export function useDesigner(
           content = buf.content;
         }
       } catch {}
-      if (content === "") {
+      if (ws?.buffers?.[path] === undefined) {
         const read = await readProjectFile(path, rootPath);
         content = read.content;
       }
@@ -277,6 +287,9 @@ export function useDesigner(
           nextCssText = internal;
         }
       }
+      // Una lectura lenta de la pestaña anterior no puede reemplazar el diseño
+      // de la pestaña que el usuario abrió mientras tanto.
+      if (requestId !== loadRequestRef.current || activePathRef.current !== path) return;
       historyRef.current = { entries: [], index: -1, skipNext: false };
       setDocument({
         id: path,
@@ -296,14 +309,19 @@ export function useDesigner(
       setRoots(doc.roots);
       setElementCssTargets(savedTargets);
       setSelectedId(null);
-      setFactory(createIdFactory());
+      // Los IDs del documento cargado ya ocupan los primeros números. Si la
+      // fábrica empieza otra vez en 1, los elementos nuevos comparten ID con
+      // nodos existentes y cualquier movimiento acaba apuntando al nodo viejo.
+      setFactory(createIdFactoryAfter(doc.roots));
       setCssTarget(nextCssTarget);
       writeCssText(nextCssText);
       setAppliedSnapshot(`${serialize(doc.roots)}\u0000${nextCssText}`);
     } catch (e) {
-      setError(messageOf(e, "No se pudo cargar el documento para diseño"));
+      if (requestId === loadRequestRef.current && activePathRef.current === path) {
+        setError(messageOf(e, "No se pudo cargar el documento para diseño"));
+      }
     } finally {
-      setIsBusy(false);
+      if (requestId === loadRequestRef.current) setIsBusy(false);
     }
   }, [rootPath, activePath, writeCssText]);
 
@@ -369,17 +387,23 @@ export function useDesigner(
       // Regla base propia desde el primer momento (`.div-1 { position: relative; }`):
       // el elemento ya es contexto de posicionamiento para sus futuros hijos.
       const selector = positionSelector(next, res.value);
+      let nextCss = cssTextRef.current;
       if (selector !== null) {
-        writeCssText(ensurePositionRelative(cssTextRef.current, selector));
+        nextCss = ensurePositionRelative(nextCss, selector);
       }
       if (position !== undefined) {
-        const moved = applyMove(next, cssTextRef.current, {
+        const moved = applyMove(next, nextCss, {
           nodeId: res.value.id,
           parentId,
           box: position,
         });
-        if (moved.ok) writeCssText(moved.value.cssText);
+        if (!moved.ok) {
+          setError(moved.message);
+          return;
+        }
+        nextCss = moved.value.cssText;
       }
+      if (nextCss !== cssTextRef.current) writeCssText(nextCss);
       setRoots(next);
       setSelectedId(res.value.id);
     },
@@ -432,6 +456,21 @@ export function useDesigner(
     [roots],
   );
 
+  const duplicateNode = useCallback(
+    (nodeId: PrismaId) => {
+      setError(null);
+      const next = shallowCloneRoots(rootsRef.current);
+      const result = duplicateNodePure(next, factory, nodeId);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setRoots(next);
+      setSelectedId(result.value.id);
+    },
+    [factory],
+  );
+
   const updateText = useCallback(
     (nodeId: PrismaId, text: string) => {
       setError(null);
@@ -458,6 +497,20 @@ export function useDesigner(
       setRoots(next);
     },
     [roots],
+  );
+
+  const removeNodeAttr = useCallback(
+    (nodeId: PrismaId, name: string) => {
+      setError(null);
+      const next = shallowCloneRoots(rootsRef.current);
+      const result = removeNodeAttributePure(next, nodeId, name);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setRoots(next);
+    },
+    [],
   );
 
   const setBooleanAttr = useCallback(
@@ -574,15 +627,20 @@ export function useDesigner(
       setError(null);
       setCssTarget(target);
       void (async () => {
-        let nextText = "";
-        if (target.kind === "external") {
-          const ct = await optionsRef.current.getCssText(target.href);
-          nextText = ct ?? "";
-        } else {
-          nextText = readInternalStyle(roots) ?? "";
+        try {
+          let nextText = "";
+          if (target.kind === "external") {
+            const ct = await optionsRef.current.getCssText(target.href);
+            nextText = ct ?? "";
+          } else {
+            nextText = readInternalStyle(roots) ?? "";
+          }
+          writeCssText(nextText);
+          setAppliedSnapshot(`${serialize(roots)}\u0000${nextText}`);
+        } catch (cause) {
+          setCssTarget(cssTarget);
+          setError(messageOf(cause, "No se pudo leer la hoja de estilos."));
         }
-        writeCssText(nextText);
-        setAppliedSnapshot(`${serialize(roots)}\u0000${nextText}`);
       })();
       return true;
     },
@@ -610,11 +668,16 @@ export function useDesigner(
     setError(null);
     setCssTarget(target);
     void (async () => {
-      const text = target?.kind === "external"
-        ? await optionsRef.current.getCssText(target.href) ?? ""
-        : target?.kind === "internal" ? readInternalStyle(roots) ?? "" : "";
-      writeCssText(text);
-      setAppliedSnapshot(`${serialize(roots)}\u0000${text}`);
+      try {
+        const text = target?.kind === "external"
+          ? await optionsRef.current.getCssText(target.href) ?? ""
+          : target?.kind === "internal" ? readInternalStyle(roots) ?? "" : "";
+        writeCssText(text);
+        setAppliedSnapshot(`${serialize(roots)}\u0000${text}`);
+      } catch (cause) {
+        setCssTarget(cssTarget);
+        setError(messageOf(cause, "No se pudo leer la hoja de estilos."));
+      }
     })();
     return true;
   }, [roots, appliedSnapshot, writeCssText, cssTarget]);
@@ -649,19 +712,18 @@ export function useDesigner(
         } catch {}
       }
       void (async () => {
-        const ct = await optionsRef.current.getCssText(clean);
-        if (ct === null) {
-          // Crear significa crear: el fichero aparece en el árbol desde ya,
-          // no solo al pulsar Aplicar.
-          try {
+        try {
+          const ct = await optionsRef.current.getCssText(clean);
+          if (ct === null) {
+            // Crear significa crear: el fichero aparece en el árbol desde ya,
+            // no solo al pulsar Aplicar.
             await optionsRef.current.writeCssText(clean, "");
-          } catch (cause) {
-            setError(messageOf(cause, "No se pudo crear la hoja de estilo."));
-            return;
+            writeCssText("");
+          } else {
+            writeCssText(ct);
           }
-          writeCssText("");
-        } else {
-          writeCssText(ct);
+        } catch (cause) {
+          setError(messageOf(cause, "No se pudo leer la hoja de estilos."));
         }
       })();
     },
@@ -706,7 +768,8 @@ export function useDesigner(
   const applyToBuffers = useCallback(
     async (ws: {
       writeBuffer: (path: string, content: string) => void;
-      saveBuffer?: (path: string) => Promise<string | null>;
+      saveBuffer: (path: string) => Promise<string | null>;
+      ensureBuffer: (path: string) => Promise<string | null>;
     }) => {
       const path = activePathRef.current;
       if (path === null || document === null) return false;
@@ -741,36 +804,29 @@ export function useDesigner(
           setError("La hoja de estilos no es un archivo local del proyecto y no se puede guardar desde el diseñador.");
           return false;
         }
-        const cssBufferIsOpen = workspaceRef.current?.buffers?.[cssPath] !== undefined;
-        if (cssBufferIsOpen) {
-          ws.writeBuffer(cssPath, cssTextRef.current);
-        } else {
-          try {
-            await optionsRef.current.writeCssText(cssTarget.href, cssTextRef.current);
-          } catch (cause) {
-            setError(messageOf(cause, "No se pudo guardar la hoja de estilos."));
+        if (workspaceRef.current?.buffers?.[cssPath] === undefined) {
+          const loadError = await ws.ensureBuffer(cssPath);
+          if (loadError !== null) {
+            setError(loadError);
             return false;
           }
         }
-        if (ws.saveBuffer) {
-          const htmlError = await ws.saveBuffer(path);
-          if (htmlError !== null) {
-            setError(htmlError);
-            return false;
-          }
-          const cssError = await ws.saveBuffer(cssPath);
-          if (cssError !== null) {
-            setError(cssError);
-            return false;
-          }
+        ws.writeBuffer(cssPath, cssTextRef.current);
+        const cssError = await ws.saveBuffer(cssPath);
+        if (cssError !== null) {
+          setError(cssError);
+          return false;
+        }
+        const htmlError = await ws.saveBuffer(path);
+        if (htmlError !== null) {
+          setError(htmlError);
+          return false;
         }
       } else {
-        if (ws.saveBuffer) {
-          const htmlError = await ws.saveBuffer(path);
-          if (htmlError !== null) {
-            setError(htmlError);
-            return false;
-          }
+        const htmlError = await ws.saveBuffer(path);
+        if (htmlError !== null) {
+          setError(htmlError);
+          return false;
         }
       }
       setAppliedSnapshot(`${serialize(current)}\u0000${cssTextRef.current}`);
@@ -808,8 +864,10 @@ export function useDesigner(
     moveNode,
     reorder,
     deleteNode,
+    duplicateNode,
     updateText,
     setNodeAttr,
+    removeNodeAttr,
     setBooleanAttr,
     setNodeStyle,
     nodeStyle,

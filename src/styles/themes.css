@@ -17,6 +17,12 @@
  * cubre el arranque antes de que React escriba el atributo.
  */
 
+:root {
+  /* El preview representa una página de navegador, independiente del tema UI. */
+  --canvas-preview-bg: #fff;
+  --canvas-preview-fg: #111;
+}
+
 [data-theme="light"] {
   color-scheme: light;
 

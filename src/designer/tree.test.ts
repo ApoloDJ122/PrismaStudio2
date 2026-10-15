@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createIdFactory, createIdFactoryFrom, isPrismaId } from "./identity.ts";
+import { createIdFactory, createIdFactoryAfter, createIdFactoryFrom, isPrismaId } from "./identity.ts";
 import { isComponentName, isKnownTag, isVoidTag } from "./html.ts";
 import {
   ancestorsOf,
@@ -28,6 +28,7 @@ import {
   walk,
 } from "./tree.ts";
 import type { Attribute, PrismaNode } from "./types.ts";
+import { parseMarkup } from "./parse.ts";
 
 const { deepEqual, equal, ok } = assert;
 
@@ -50,6 +51,14 @@ describe("M2.0.0 identidad interna", () => {
 
     equal(factory.next(), "element-1000");
     equal(factory.next(), "element-1001");
+  });
+
+  it("continua después del mayor ID del documento, incluidos los nodos anidados", () => {
+    const roots = parseMarkup("<body><div><span>x</span></div></body>").roots;
+    const factory = createIdFactoryAfter(roots);
+    const inserted = createElement(factory, "button");
+    equal(inserted.id, "element-005");
+    equal(findById(roots, inserted.id), null);
   });
 
   it("distingue el identificador interno del id de HTML", () => {

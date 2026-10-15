@@ -1,4 +1,4 @@
-import type { PrismaId } from "./types.ts";
+import type { PrismaId, PrismaNode } from "./types.ts";
 
 /**
  * M2.0.0 - Identidad interna de los elementos.
@@ -49,6 +49,20 @@ export function createIdFactoryFrom(start: number): { next: () => PrismaId } {
   }
 
   return factory;
+}
+
+/** Crea IDs posteriores al mayor ID que ya existe en el árbol del documento. */
+export function createIdFactoryAfter(roots: readonly PrismaNode[]): { next: () => PrismaId } {
+  let last = 0;
+  const visit = (nodes: readonly PrismaNode[]): void => {
+    for (const node of nodes) {
+      const match = /^element-(\d+)$/.exec(node.id);
+      if (match !== null) last = Math.max(last, Number(match[1]));
+      visit(node.children);
+    }
+  };
+  visit(roots);
+  return createIdFactoryFrom(last);
 }
 
 /**

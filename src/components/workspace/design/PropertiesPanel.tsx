@@ -175,6 +175,8 @@ const BOOLEAN_ATTRIBUTES_BY_TAG: Record<string, { name: string; label: string }[
 };
 
 export function PropertiesPanel({ designer }: Props) {
+  const [newAttributeName, setNewAttributeName] = useState("");
+  const [newAttributeValue, setNewAttributeValue] = useState("");
   const node = designer.selectedNode;
 
   if (node === null) {
@@ -266,6 +268,41 @@ export function PropertiesPanel({ designer }: Props) {
         </Section>
       )}
 
+      {isElement && node.tag !== null && !["script", "style"].includes(node.tag.toLowerCase()) && (
+        <Section title="Otros atributos" defaultOpen={false}>
+          {node.attributes
+            .filter((attribute) => ![
+              "id", "class", "style", "title", "aria-label",
+              ...(ATTRIBUTES_BY_TAG[node.tag!.toLowerCase()] ?? []).map((item) => item.name),
+              ...(BOOLEAN_ATTRIBUTES_BY_TAG[node.tag!.toLowerCase()] ?? []).map((item) => item.name),
+            ].includes(attribute.name.toLowerCase()))
+            .map((attribute) => (
+              <div className="ds-field-row" key={attribute.name}>
+                <TextField label={attribute.name} value={attribute.value ?? ""} onCommit={(value) => designer.setNodeAttr(node.id, attribute.name, value)} />
+                <button type="button" className="ds-mini-btn ds-mini-btn--danger" aria-label={`Quitar ${attribute.name}`} onClick={() => designer.removeNodeAttr(node.id, attribute.name)}>×</button>
+              </div>
+            ))}
+          <label className="ds-field">
+            <span className="ds-field__label">Nombre</span>
+            <input className="ds-field__input" value={newAttributeName} onChange={(event) => setNewAttributeName(event.target.value)} placeholder="data-estado" />
+          </label>
+          <label className="ds-field">
+            <span className="ds-field__label">Valor</span>
+            <input className="ds-field__input" value={newAttributeValue} onChange={(event) => setNewAttributeValue(event.target.value)} />
+          </label>
+          <button
+            type="button"
+            className="ds-mini-btn"
+            disabled={newAttributeName.trim() === ""}
+            onClick={() => {
+              designer.setNodeAttr(node.id, newAttributeName, newAttributeValue);
+              setNewAttributeName("");
+              setNewAttributeValue("");
+            }}
+          >Añadir atributo</button>
+        </Section>
+      )}
+
       {isElement && (
         <Section title="Disposición">
           <div className="ds-field-row">
@@ -331,6 +368,13 @@ export function PropertiesPanel({ designer }: Props) {
         <div className="ds-actions">
           {isElement && (
             <>
+              <button
+                type="button"
+                className="ds-mini-btn"
+                onClick={() => designer.duplicateNode(node.id)}
+              >
+                Duplicar
+              </button>
               <button
                 type="button"
                 className="ds-mini-btn"

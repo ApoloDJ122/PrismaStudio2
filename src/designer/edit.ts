@@ -10,7 +10,7 @@ import {
   insertAt,
   type IdFactory,
 } from "./tree.ts";
-import { setRawTextContent, setAttribute, rawTextContent } from "./attributes.ts";
+import { setRawTextContent, setAttribute, removeAttribute, rawTextContent } from "./attributes.ts";
 import { ensurePositionRelative, writeBox, type Box } from "./cssEdit.ts";
 import type { Attribute, PrismaId, PrismaNode } from "./types.ts";
 
@@ -494,7 +494,23 @@ export function setNodeAttribute(roots: PrismaNode[], nodeId: PrismaId, name: st
     return { ok: false, message: "El elemento ya no está en el documento." };
   }
 
-  return setAttribute(node, name, value) ? { ok: true } : { ok: false, message: "Este nodo no admite ese atributo." };
+  if (!/^[a-z_:][a-z0-9:._-]*$/i.test(name.trim())) {
+    return { ok: false, message: "El nombre del atributo no es válido." };
+  }
+
+  return setAttribute(node, name.trim(), value) ? { ok: true } : { ok: false, message: "Este nodo no admite ese atributo." };
+}
+
+/** Elimina un atributo HTML de un elemento, preservando el resto de la etiqueta. */
+export function removeNodeAttribute(roots: PrismaNode[], nodeId: PrismaId, name: string): SimpleResult {
+  const node = findById(roots, nodeId);
+  if (node === null) return { ok: false, message: "El elemento ya no está en el documento." };
+  if (node.kind !== "element" || node.tag === null || node.tag === "script" || node.tag === "style") {
+    return { ok: false, message: "Este nodo no admite cambios en sus atributos." };
+  }
+  return removeAttribute(node, name)
+    ? { ok: true }
+    : { ok: false, message: "No se pudo quitar el atributo del elemento." };
 }
 
 /**
@@ -524,6 +540,92 @@ export function deleteNode(roots: PrismaNode[], nodeId: PrismaId): SimpleResult 
 }
 
 /**
+ * Duplica un elemento completo inmediatamente después de su original.
+ * El marcado, los atributos, comentarios y subárboles se copian sin cambios;
+ * solo se regeneran las identidades internas de Prisma y las relaciones padre.
+ */
+export function duplicateNode(
+  roots: PrismaNode[],
+  factory: IdFactory,
+  nodeId: PrismaId,
+): EditResult<PrismaNode> {
+  const original = findById(roots, nodeId);
+
+  if (original === null || !isMovableNode(original)) {
+    return fail("El elemento que quieres duplicar ya no está en el documento.");
+  }
+
+  if (original.tag === "html" || original.tag === "head" || original.tag === "body") {
+    return fail("La estructura del documento no se puede duplicar.");
+  }
+
+  const cloneTree = (source: PrismaNode, parentId: PrismaId | null): PrismaNode => {
+    const clone: PrismaNode = {
+      ...source,
+      id: factory.next(),
+      attributes: source.attributes.map((attribute) => ({ ...attribute })),
+      origin: { ...source.origin },
+      blade: source.blade === null ? null : { ...source.blade },
+      children: [],
+      parentId,
+    };
+    clone.children = source.children.map((child) => cloneTree(child, clone.id));
+    return clone;
+  };
+
+  const clone = cloneTree(original, original.parentId);
+  // Los IDs HTML no pueden repetirse. Remapea los del subárbol y sus referencias
+  // locales comunes para que la copia siga siendo un fragmento válido.
+  const usedIds = new Set(
+    flatten(roots)
+      .map((node) => node.attributes.find((attribute) => attribute.name.toLowerCase() === "id")?.value)
+      .filter((value): value is string => value !== null && value !== undefined),
+  );
+  const idMap = new Map<string, string>();
+  for (const node of flatten([clone])) {
+    const attribute = node.attributes.find((item) => item.name.toLowerCase() === "id");
+    const oldId = attribute?.value;
+    if (oldId === null || oldId === undefined || oldId === "") continue;
+    let counter = 1;
+    let nextId = `${oldId}-copy`;
+    while (usedIds.has(nextId)) {
+      counter += 1;
+      nextId = `${oldId}-copy-${counter}`;
+    }
+    usedIds.add(nextId);
+    idMap.set(oldId, nextId);
+    setAttribute(node, "id", nextId);
+  }
+  const idReferenceAttributes = new Set([
+    "for", "headers", "list", "form", "aria-activedescendant", "aria-controls",
+    "aria-describedby", "aria-details", "aria-errormessage", "aria-flowto",
+    "aria-labelledby", "aria-owns",
+  ]);
+  for (const node of flatten([clone])) {
+    for (const attribute of [...node.attributes]) {
+      const name = attribute.name.toLowerCase();
+      if (attribute.value === null) continue;
+      if (idReferenceAttributes.has(name)) {
+        const updated = attribute.value.split(/\s+/).map((part) => idMap.get(part) ?? part).join(" ");
+        if (updated !== attribute.value) setAttribute(node, attribute.name, updated);
+      } else if ((name === "href" || name === "xlink:href") && attribute.value.startsWith("#")) {
+        const updated = idMap.get(attribute.value.slice(1));
+        if (updated !== undefined) setAttribute(node, attribute.name, `#${updated}`);
+      }
+    }
+  }
+  const siblings = siblingsOf(roots, original);
+  const position = siblings.indexOf(original);
+
+  if (position < 0) {
+    return fail("El elemento no está donde debería.");
+  }
+
+  siblings.splice(position + 1, 0, clone);
+  return okay(clone);
+}
+
+/**
  * Cambia el texto interior de un elemento simple (`<h1>Título</h1>`).
  *
  * Solo vale para elementos que contienen texto y nada más: si dentro hay otros
@@ -546,10 +648,9 @@ export function setNodeText(
     return { ok: false, message: "Solo se puede editar el texto de un elemento." };
   }
 
-  const nested = node.children.some(
-    (child) =>
-      child.kind !== "text" && child.kind !== "comment",
-  );
+  // Los comentarios y nodos Blade también son contenido fuente; no se quitan
+  // silenciosamente al reemplazar el texto del elemento.
+  const nested = node.children.some((child) => child.kind !== "text");
 
   if (nested) {
     return { ok: false, message: "Este elemento tiene contenido anidado: edítalo en Código." };

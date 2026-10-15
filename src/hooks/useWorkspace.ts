@@ -712,6 +712,30 @@ export function useWorkspace(projectState: ProjectState) {
     [],
   );
 
+  /** Carga un búfer sin abrir una pestaña, por ejemplo una hoja CSS del diseñador. */
+  const ensureBuffer = useCallback(async (path: string): Promise<string | null> => {
+    if (buffersRef.current[path] !== undefined) return null;
+    const current = projectRef.current;
+    if (current === null) return "No hay un proyecto abierto.";
+    try {
+      const file = await readProjectFile(path, current.path);
+      if (projectRef.current?.path !== current.path) return "El proyecto cambió mientras se cargaba el archivo.";
+      if (buffersRef.current[path] === undefined) {
+        writeBuffers({
+          ...buffersRef.current,
+          [path]: { name: file.name, language: file.language, content: file.content, savedContent: file.content },
+        });
+      }
+      return null;
+    } catch (cause) {
+      const message = messageOf(cause, "No se pudo cargar el archivo.");
+      reportError(message);
+      return message;
+    }
+  }, [reportError, writeBuffers]);
+
+  const getBuffer = useCallback((path: string) => buffersRef.current[path], []);
+
   return {
     buffers,
     openTabs,
@@ -749,6 +773,8 @@ export function useWorkspace(projectState: ProjectState) {
     isTabDirty,
     resetWorkspace,
     writeBuffer,
+    ensureBuffer,
+    getBuffer,
   };
 }
 

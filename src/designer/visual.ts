@@ -1,4 +1,5 @@
 import { flatten, textContent } from "./tree.ts";
+import { isRawTextTag } from "./html.ts";
 import type { PrismaId, PrismaNode } from "./types.ts";
 
 /**
@@ -118,5 +119,11 @@ export function isSimpleTextElement(node: PrismaNode): boolean {
     return false;
   }
 
-  return node.children.every((child) => child.kind === "text" || child.kind === "comment");
+  // El parser guarda textarea/title/script/style como bloques crudos en source,
+  // no como nodos de texto; el inspector aún no tiene un editor seguro para ellos.
+  if (isRawTextTag(node.tag)) return false;
+
+  // Los comentarios deben conservarse y no pueden desaparecer al reemplazar
+  // todo el contenido desde el campo de texto.
+  return node.children.every((child) => child.kind === "text");
 }

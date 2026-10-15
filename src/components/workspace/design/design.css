@@ -416,8 +416,8 @@
   box-sizing: border-box;
   container-type: size;
   container-name: ds-preview;
-  background: #fff;
-  color: #111;
+  background: var(--canvas-preview-bg);
+  color: var(--canvas-preview-fg);
   color-scheme: light;
   border-radius: 3px;
   box-shadow: 0 8px 28px var(--color-shadow);

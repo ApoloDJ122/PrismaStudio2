@@ -153,7 +153,7 @@ aportan funcionalidad se registran en el historial de versiones sin abrir una ve
 | ------ | ------ | ------ |
 | 0 | Base técnica | Completado |
 | 1 | Proyectos web | En desarrollo (`M1.0.0` a `M1.5.0` completadas) |
-| 2 | Diseñador visual | En desarrollo (`M2.0.0`–`M2.2.2` completadas) |
+| 2 | Diseñador visual | En desarrollo (`M2.0.0`–`M2.4.0` implementadas; revisión manual pendiente) |
 
 ## Historial de versiones
 
@@ -681,6 +681,61 @@ Decisiones de alcance (fuera de M2.2.1):
 - Los placeholders de etiquetas vacías mantienen fondo transparente y reflejan en el lienzo las
   coordenadas `position`/`left`/`top` de la hoja de diseño.
 
+#### M2.3.0 — Auditoría y estabilización del diseñador visual
+
+- Los identificadores nuevos continúan después del mayor ID del documento cargado. Esto evita que
+  elementos insertados compartan identidad con nodos existentes y que las operaciones actúen sobre
+  otro elemento.
+- La inserción con posición inicial conserva el CSS calculado y comunica un fallo de
+  posicionamiento en vez de dejar el elemento insertado silenciosamente en una posición distinta.
+- Al abrir Diseño se respeta un búfer HTML vacío como contenido válido. Las lecturas lentas de una
+  pestaña anterior ya no reemplazan el documento activo.
+- Las hojas CSS externas se cargan en un búfer con su contenido original, incluso si no tienen una
+  pestaña abierta. Guardarlas pasa por la comparación existente de cambios externos antes de
+  escribirlas.
+- Los errores al leer hojas CSS se muestran en el diseñador y el cambio de hoja se revierte cuando
+  la lectura falla.
+- El diseñador conserva los bloques `<script>` y `<style>` como contenido opaco y no permite
+  cambiar sus atributos desde las operaciones de atributos del modelo.
+- Los colores fijos del viewport de previsualización se definen como tokens globales, conservando
+  su fondo blanco aunque cambie el tema de Prisma y manteniendo la regla de estilos sin colores
+  literales en los componentes.
+- Se añadió una prueba para comprobar que la fábrica de IDs continúa después de los IDs existentes,
+  incluidos los nodos anidados.
+- No se añadieron dependencias ni se modificó Rust. La interfaz no cuenta con pruebas automatizadas;
+  la revisión visual manual sigue pendiente.
+
+#### M2.4.0 — Completar la edición visual
+
+- El inspector permite duplicar un elemento junto con todo su subárbol, incluyendo comentarios y
+  contenido anidado. La copia queda junto al original y recibe identidades internas nuevas; los
+  atributos se conservan y los `id` HTML se renombran en la copia junto con sus referencias locales
+  comunes (`for`, `aria-*`, `href="#..."`, entre otras).
+- El inspector permite editar y quitar atributos adicionales, incluidos `data-*`, `aria-*` y
+  atributos propios. Los nombres se validan antes de modificar el HTML y las operaciones siguen
+  bloqueadas para `<script>` y `<style>`.
+- El cambio de texto ahora rechaza elementos con comentarios, Blade u otros nodos no textuales,
+  para no eliminar contenido que no se está editando.
+- El inspector ya no presenta como editable el texto de etiquetas crudas como `<textarea>`: el
+  modelo las conserva en el origen del elemento y aún no existe un editor seguro para ese formato.
+- Al duplicar, una regla CSS que apunte específicamente al `id` original no se copia ni se reescribe
+  para el nuevo `id`; la copia puede necesitar una clase compartida o ajustes de estilo posteriores.
+- Las operaciones se registran mediante el historial existente de raíces y CSS; no se añadió una
+  implementación separada de deshacer/rehacer. La interfaz no tiene un mecanismo automatizado de
+  pruebas, por lo que aún requiere revisión manual. La duplicación de componentes con expresiones
+  Blade anidadas se prueba en el nivel del modelo, pero requiere validación en la interfaz.
+- No se añadieron dependencias ni se modificó Rust.
+
+Comprobaciones realizadas durante `M2.4.0`:
+
+- `tsc --noEmit` termina sin errores.
+- `node --test "src/**/*.test.ts"` ejecuta 306 pruebas: todas correctas (42 suites).
+- La compilación de producción con Vite termina correctamente; se mantiene el aviso de fragmentos
+  grandes asociado principalmente a Monaco.
+- `npm test` no pudo iniciar porque el ejecutable global de npm apunta a un `npm-cli.js` inexistente.
+  Se ejecutó directamente el mismo runner configurado por el proyecto (`node --test`).
+- No hay pruebas automatizadas de interfaz ni se realizó una comprobación manual de la aplicación.
+
 ## Estado actual
 
 Funciona actualmente:
@@ -744,6 +799,18 @@ Comprobaciones realizadas al cerrar `M2.2.1`:
   y roundtrip), toda correcta. El script se borró tras ejecutarse.
 - `npm run build` (Vite) compila sin errores.
 
+Comprobaciones realizadas durante `M2.3.0`:
+
+- `node --test "src/**/*.test.ts"` ejecuta 302 pruebas del frontend: todas correctas.
+- `tsc --noEmit` termina sin errores.
+- La compilación de producción de Vite termina correctamente. Vite muestra el aviso habitual de
+  que algunos fragmentos de Monaco superan 500 kB.
+- El comando `npm` del entorno no inicia porque su instalación global apunta a un `npm-cli.js` que
+  no existe. Se ejecutaron directamente los mismos scripts locales (Node para pruebas, TypeScript
+  y Vite para la compilación).
+- No hay un mecanismo de pruebas de interfaz en el proyecto; los flujos del lienzo requieren
+  comprobación manual en la aplicación.
+
 Comprobaciones realizadas al cerrar `M2.2.0`:
 
 - `npx tsc --noEmit` no informa de errores de tipos.
@@ -787,8 +854,9 @@ Limitaciones actuales del diseñador:
 - No hay controles de redimensionamiento por arrastre; el tamaño se ajusta desde el inspector.
 - Las consultas responsive por ancho se previsualizan; otras reglas `@media` y reglas `@supports`
   avanzadas se editan en el editor de código.
-- Al aplicar, el CSS que ya está abierto se sincroniza con su búfer y respeta la detección de
-  cambios externos. Una hoja cerrada se guarda directamente en el proyecto.
+- Al aplicar, el HTML y el CSS externo pasan por búferes y respetan la detección de cambios
+  externos. Las hojas CSS cargadas por el diseñador pueden quedar en búfer aunque no tengan una
+  pestaña abierta.
 - El lienzo y el árbol no tienen pruebas automatizadas de interfaz; la cobertura automática es
   del núcleo puro (`src/designer`). La UI se verifica manualmente.
 - Los estilos del `body` del autor no se aplican a la página del lienzo (solo las reglas de

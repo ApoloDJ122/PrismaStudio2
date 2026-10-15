@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { applyMove, deleteNode, ensureStylesheetLink, insertElement, linkedStylesheets, reorderNode, setNodeText } from "./edit.ts";
+import { applyMove, deleteNode, duplicateNode, ensureStylesheetLink, insertElement, linkedStylesheets, removeNodeAttribute, reorderNode, setNodeAttribute, setNodeText } from "./edit.ts";
 import { createIdFactory } from "./identity.ts";
 import { parseMarkup } from "./parse.ts";
 import { serialize } from "./tree.ts";
@@ -95,6 +95,30 @@ describe("M2.2.1 eliminar y editar texto", () => {
     ok(!deleteNode(doc, body!.id).ok);
   });
 
+  it("duplica un subárbol con contenido y comentarios, asignando IDs internos nuevos", () => {
+    const doc = roots('<body><section class="card"><!-- keep --><p id="label">Hola</p><a href="#label" aria-describedby="label">ir</a></section></body>');
+    const original = doc[0]?.children[0];
+    ok(original !== undefined);
+    const copy = duplicateNode(doc, createIdFactory(), original!.id);
+    if (!copy.ok) throw new Error(copy.message);
+    equal(copy.value.parentId, original!.parentId);
+    ok(copy.value.id !== original!.id);
+    equal(copy.value.children.length, original!.children.length);
+    ok(copy.value.children.every((child, index) => child.id !== original!.children[index]?.id));
+    equal(serialize(doc), '<body><section class="card"><!-- keep --><p id="label">Hola</p><a href="#label" aria-describedby="label">ir</a></section><section class="card"><!-- keep --><p id="label-copy">Hola</p><a href="#label-copy" aria-describedby="label-copy">ir</a></section></body>');
+  });
+
+  it("edita y elimina atributos adicionales sin cambiar los demás", () => {
+    const doc = roots('<body><button class="btn" data-state="ready" aria-live="polite"></button></body>');
+    const button = doc[0]?.children[0];
+    ok(button !== undefined);
+    ok(setNodeAttribute(doc, button!.id, "data-state", "busy").ok);
+    ok(removeNodeAttribute(doc, button!.id, "aria-live").ok);
+    equal(serialize(doc), '<body><button class="btn" data-state="busy"></button></body>');
+    ok(!setNodeAttribute(doc, button!.id, "bad name", "x").ok);
+    equal(serialize(doc), '<body><button class="btn" data-state="busy"></button></body>');
+  });
+
   it("cambia el texto de un elemento simple", () => {
     const doc = roots("<body><h1>Hola</h1></body>");
     const h1 = doc[0]?.children[0];
@@ -146,5 +170,14 @@ describe("M2.2.1 eliminar y editar texto", () => {
     const res = setNodeText(doc, factory, div!.id, "hola");
     ok(!res.ok);
     ok(serialize(doc).includes("<p>x</p>"));
+  });
+
+  it("rechaza editar texto si hay comentarios para no eliminarlos", () => {
+    const doc = roots("<body><p>Antes<!-- mantener -->después</p></body>");
+    const p = doc[0]?.children[0];
+    ok(p !== undefined);
+    const res = setNodeText(doc, createIdFactory(), p!.id, "Nuevo");
+    ok(!res.ok);
+    equal(serialize(doc), "<body><p>Antes<!-- mantener -->después</p></body>");
   });
 });

@@ -16,7 +16,7 @@ import CodeEditor, { type CodeEditorApi } from "./CodeEditor";
 import FileTree, { type TreeCommand } from "./FileTree";
 import SearchOverlay, { type PaletteMode } from "./SearchOverlay";
 import { DesignCanvas, DesignPanel, PropertiesPanel } from "./design";
-import { createFile as createProjectFile, readProjectFile, saveProjectFile } from "../../services/projects";
+import { createFile as createProjectFile, saveProjectFile } from "../../services/projects";
 import { linkedStylesheets } from "../../designer/edit";
 import "./Workspace.css";
 
@@ -190,6 +190,8 @@ function Workspace({
     reportError,
     clearError: clearWorkspaceError,
     writeBuffer,
+    ensureBuffer,
+    getBuffer,
     buffers,
   } = useWorkspace(projectState);
 
@@ -233,12 +235,9 @@ function Workspace({
       if (cssPath === null) return null;
       const pending = buffers[cssPath];
       if (pending !== undefined) return pending.content;
-      try {
-        const read = await readProjectFile(cssPath, projectPath);
-        return read.content;
-      } catch {
-        return null;
-      }
+      const loadError = await ensureBuffer(cssPath);
+      if (loadError !== null) throw new Error(loadError);
+      return getBuffer(cssPath)?.content ?? "";
     },
     writeCssText: async (href: string | null, text: string) => {
       if (href === null) return;
@@ -246,7 +245,7 @@ function Workspace({
       if (cssPath === null) throw new Error("La hoja de estilos no es un archivo local del proyecto.");
       await saveProjectFile(cssPath, text, projectPath);
     },
-  }), [projectPath, buffers, resolveCssPath]);
+  }), [projectPath, buffers, ensureBuffer, getBuffer, resolveCssPath]);
   const designerSaveBuffer = useCallback(
     (path: string) => saveBuffer(path),
     [saveBuffer],
@@ -254,9 +253,10 @@ function Workspace({
   const designerWorkspace = useMemo(() => ({
     activePath,
     writeBuffer,
+    ensureBuffer,
     saveBuffer: designerSaveBuffer,
     buffers,
-  }), [activePath, writeBuffer, designerSaveBuffer, buffers]);
+  }), [activePath, writeBuffer, ensureBuffer, designerSaveBuffer, buffers]);
   const designer = useDesigner(projectState, designerOptions, designerWorkspace);
   const canDesignActiveFile = activePath !== null && /\.html?$|\.blade\.php$/i.test(activePath);
   const projectCssChoices = useMemo(() => {
@@ -612,7 +612,7 @@ function Workspace({
               if (designer.viewMode !== "design") {
                 designer.setViewMode("design");
               } else if (designer.hasUnappliedChanges) {
-                void designer.applyToBuffers({ writeBuffer, saveBuffer }).then((applied) => {
+                void designer.applyToBuffers({ writeBuffer, saveBuffer, ensureBuffer }).then((applied) => {
                   if (applied) designer.setViewMode("code");
                 });
               } else {
@@ -633,7 +633,7 @@ function Workspace({
                 className="button button--primary"
                 disabled={isBusy || designer.isBusy || !designer.hasUnappliedChanges}
                 title={designer.hasUnappliedChanges ? "Guardar el HTML y CSS del lienzo" : "El diseño ya está aplicado"}
-                onClick={() => void designer.applyToBuffers({ writeBuffer, saveBuffer })}
+                onClick={() => void designer.applyToBuffers({ writeBuffer, saveBuffer, ensureBuffer })}
               >
                 {designer.hasUnappliedChanges ? "Guardar cambios" : "Sin cambios"}
               </button>
@@ -645,7 +645,7 @@ function Workspace({
             disabled={(!hasUnsavedChanges && !(designer.viewMode === "design" && designer.hasUnappliedChanges)) || isBusy || designer.isBusy}
             onClick={() => void (async () => {
               if (designer.viewMode === "design" && designer.hasUnappliedChanges) {
-                const applied = await designer.applyToBuffers({ writeBuffer, saveBuffer });
+                const applied = await designer.applyToBuffers({ writeBuffer, saveBuffer, ensureBuffer });
                 if (!applied) return;
               }
               await saveAll();
