@@ -1,0 +1,694 @@
+﻿/* M2.2.1 — Diseñador visual, estilo sobrio tipo Scene Builder.
+   Solo tokens del tema (--color-*, --radius-sm) y palabras clave: sin colores
+   escritos a mano, para que los tres temas sigan funcionando. */
+
+.designer {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.designer__left {
+  width: 230px;
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  border-right: 1px solid var(--color-border);
+  background-color: var(--color-sidebar-bg);
+}
+
+.designer__main {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.designer__right {
+  width: 240px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  border-left: 1px solid var(--color-border);
+  background-color: var(--color-sidebar-bg);
+}
+
+/* Laterales. */
+
+.ds-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  font-size: 12px;
+}
+
+.ds-section {
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.designer__right > .ds-side {
+  min-height: auto;
+  flex: none;
+}
+
+.designer__right > .ds-side > .ds-section:first-child {
+  max-height: 48vh;
+  overflow-y: auto;
+}
+
+.designer__right > .ds-side > .ds-section--grow {
+  flex: none;
+  max-height: 180px;
+}
+
+.designer__left > .ds-side {
+  min-height: 100%;
+}
+
+.designer__left > .ds-side > .ds-section:first-child {
+  max-height: 48vh;
+  overflow-y: auto;
+}
+
+.designer__left > .ds-side > .ds-section--grow {
+  min-height: 96px;
+}
+
+.ds-section--grow {
+  flex: 1;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-section__title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.ds-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.ds-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--color-text-subtle);
+}
+
+/* Acordeones del inspector. */
+
+.ds-acc {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ds-acc__head {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ds-acc__head::-webkit-details-marker {
+  display: none;
+}
+
+.ds-acc__head:hover {
+  color: var(--color-text);
+}
+
+.ds-acc__body {
+  padding: 2px 10px 10px;
+}
+
+/* Biblioteca de elementos. */
+
+.ds-lib__group {
+  margin-bottom: 2px;
+}
+
+.ds-lib__group-head {
+  padding: 3px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ds-lib__group-head::-webkit-details-marker {
+  display: none;
+}
+
+.ds-lib__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px 3px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--color-text);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ds-lib__group > button.ds-lib__item {
+  display: inline-flex;
+  width: calc(50% - 3px);
+  margin: 1px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.ds-lib__item code {
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ds-lib__item:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.ds-lib__item { cursor: grab; touch-action: none; }
+.ds-lib__item:active { cursor: grabbing; }
+
+.ds-lib__empty {
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+
+/* Árbol de jerarquía. */
+
+.ds-tree {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ds-tree__empty {
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+
+.ds-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  padding-right: 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ds-tree__row:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.ds-tree__row--selected {
+  background-color: var(--color-accent-soft);
+}
+
+.ds-tree__chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0;
+  color: var(--color-text-muted);
+}
+
+.ds-tree__chevron--leaf {
+  display: inline-block;
+}
+
+.ds-tree__tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ds-tree__hint {
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Lienzo. */
+
+.ds-canvas-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Barra del documento: la hoja es del HTML, no del componente. */
+
+.ds-docbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-sidebar-bg);
+}
+
+.ds-docbar__doc {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ds-docbar__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.ds-docbar__select {
+  width: auto;
+  max-width: 220px;
+}
+
+.ds-docbar__new {
+  width: 130px;
+  flex: none;
+}
+
+.ds-docbar__folder {
+  width: 140px;
+  flex: none;
+}
+
+.ds-docbar__error {
+  flex: none;
+  color: var(--color-danger-text);
+  font-size: 11px;
+}
+
+.ds-canvas {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+  background:
+    radial-gradient(circle, var(--color-border) 1px, transparent 1px) 0 0 / 18px 18px,
+    var(--color-surface-sunken);
+}
+
+.ds-canvas__toolbar {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  width: max-content;
+  margin: 8px auto 0;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+.ds-zoom__btn,
+.ds-zoom__value {
+  min-width: 26px;
+  padding: 1px 7px;
+  font-size: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+
+.ds-zoom__btn:hover,
+.ds-zoom__value:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.ds-zoom__btn--active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-soft);
+}
+
+.ds-viewport-switch {
+  display: flex;
+  gap: 1px;
+  padding-right: 4px;
+  margin-right: 2px;
+  border-right: 1px solid var(--color-border);
+}
+
+.ds-viewport-dimensions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ds-viewport-dimensions input {
+  width: 54px;
+  min-width: 0;
+  height: 24px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: right;
+}
+
+.ds-zoom__value {
+  min-width: 48px;
+}
+
+.ds-page-wrap {
+  padding: 20px 28px 56px;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.ds-viewport {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  container-type: size;
+  container-name: ds-preview;
+  background: #fff;
+  color: #111;
+  color-scheme: light;
+  border-radius: 3px;
+  box-shadow: 0 8px 28px var(--color-shadow);
+  transform-origin: top center;
+}
+
+.ds-page {
+  box-sizing: border-box;
+  width: calc(100% - 16px);
+  min-height: calc(100% - 16px);
+  margin: 8px;
+  color: inherit;
+  color-scheme: light;
+}
+
+/* Nodos dentro de la página. */
+
+.ds-node.ds-selected {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.ds-selection-label {
+  position: absolute;
+  z-index: 7;
+  padding: 0 6px;
+  border-radius: 3px;
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 18px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.ds-resize-overlay {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  border: 1px solid var(--color-accent);
+  pointer-events: none;
+}
+
+.ds-resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid var(--color-accent-contrast);
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+  pointer-events: auto;
+}
+
+.ds-resize-handle--e { right: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.ds-resize-handle--s { bottom: -5px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.ds-resize-handle--se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+.ds-node.ds-drop {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 1px;
+}
+
+.ds-palette-drop-marker {
+  position: absolute;
+  z-index: 12;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ds-palette-drop-marker span {
+  position: absolute;
+  left: 14px;
+  top: -8px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.ds-node.ds-dragging {
+  opacity: 0.72;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  will-change: translate;
+  cursor: grabbing;
+}
+
+.ds-node.ds-empty {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 96px;
+  min-height: 36px;
+  padding: 5px 9px;
+  overflow: visible;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: grab;
+}
+
+.ds-node.ds-empty::after {
+  content: "<" attr(data-ds-tag) ">";
+  pointer-events: none;
+  color: var(--color-text-muted);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ds-empty-hint {
+  padding: 44px 20px;
+  text-align: center;
+  pointer-events: none;
+  color: var(--color-text-subtle);
+}
+
+.ds-empty-hint__title {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.ds-empty-hint__sub {
+  margin: 0;
+  font-size: 12px;
+}
+
+.ds-blade {
+  display: inline-block;
+  margin: 2px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-text-muted);
+  background-color: var(--color-surface-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 3px;
+}
+
+.ds-img-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 88px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+  background-color: var(--color-surface-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.ds-error {
+  padding: 12px;
+  color: var(--color-danger-text);
+}
+
+/* Inspector: cabecera del elemento. */
+
+.ds-element-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-text);
+}
+
+.ds-element-class {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.ds-css-line {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--color-text-subtle);
+}
+
+/* Inspector: campos en fila, etiqueta a la izquierda. */
+
+.ds-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.ds-field__label {
+  flex: none;
+  width: 88px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-field__input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.ds-field__input:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -1px;
+  border-color: var(--color-accent-border);
+}
+
+.ds-field-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ds-field-row .ds-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.ds-field-row .ds-field__label {
+  width: auto;
+}
+
+.ds-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ds-mini-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ds-mini-btn:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.ds-mini-btn--danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+.ds-mini-btn--danger:hover {
+  background-color: var(--color-danger-soft);
+}
