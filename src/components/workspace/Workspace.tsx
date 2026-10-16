@@ -707,7 +707,19 @@ function Workspace({
             />
           </main>
           <aside className="designer__right" aria-label="Propiedades">
-            <PropertiesPanel designer={designer} />
+            <PropertiesPanel
+              designer={designer}
+              onLocateCode={(path, line) => {
+                void (async () => {
+                  if (designer.hasUnappliedChanges) {
+                    const applied = await designer.applyToBuffers({ writeBuffer, saveBuffer, ensureBuffer });
+                    if (!applied) return;
+                  }
+                  designer.setViewMode("code");
+                  await selectFile(path, line);
+                })();
+              }}
+            />
           </aside>
         </div>
       ) : (

@@ -101,6 +101,7 @@ src/
 │   ├── styles.ts               # modelos de hoja de estilo, regla, declaración y coincidencia
 │   ├── selector.ts             # selectores, especificidad y relación elemento/CSS
 │   ├── css.ts                  # lector mínimo de CSS
+│   ├── propertyCatalog.ts      # M3.2.0: definiciones tipadas de propiedades HTML/CSS del inspector
 │   ├── classify.ts             # clasificación de archivos y plan del proyecto
 │   ├── tree.test.ts            # pruebas del árbol, la identidad y los atributos
 │   ├── parse.test.ts           # pruebas del lector de HTML y Blade
@@ -153,7 +154,8 @@ aportan funcionalidad se registran en el historial de versiones sin abrir una ve
 | ------ | ------ | ------ |
 | 0 | Base técnica | Completado |
 | 1 | Proyectos web | En desarrollo (`M1.0.0` a `M1.5.0` completadas) |
-| 2 | Diseñador visual | En desarrollo (`M2.0.0`–`M2.4.0` implementadas; revisión manual pendiente) |
+| 2 | Diseñador visual | En desarrollo (`M2.0.0`–`M2.6.0` implementadas; revisión manual pendiente) |
+| 3 | Panel de propiedades | En desarrollo (`M3.0.0`–`M3.2.0` implementadas; revisión manual pendiente) |
 
 ## Historial de versiones
 
@@ -714,6 +716,10 @@ Decisiones de alcance (fuera de M2.2.1):
 - El inspector permite editar y quitar atributos adicionales, incluidos `data-*`, `aria-*` y
   atributos propios. Los nombres se validan antes de modificar el HTML y las operaciones siguen
   bloqueadas para `<script>` y `<style>`.
+- La vista del lienzo obtiene las coordenadas desde el mismo selector único que usa la operación
+  de movimiento. Esto evita que una copia con clases compartidas reutilice visualmente la posición
+  del original. Los elementos movidos dentro de un contenedor usan una caja absoluta y el contenedor
+  como origen relativo, de modo que pueden superponerse libremente conservando el padre HTML.
 - El cambio de texto ahora rechaza elementos con comentarios, Blade u otros nodos no textuales,
   para no eliminar contenido que no se está editando.
 - El inspector ya no presenta como editable el texto de etiquetas crudas como `<textarea>`: el
@@ -729,12 +735,251 @@ Decisiones de alcance (fuera de M2.2.1):
 Comprobaciones realizadas durante `M2.4.0`:
 
 - `tsc --noEmit` termina sin errores.
-- `node --test "src/**/*.test.ts"` ejecuta 306 pruebas: todas correctas (42 suites).
+- `node --test "src/**/*.test.ts"` ejecuta 308 pruebas: todas correctas (42 suites).
 - La compilación de producción con Vite termina correctamente; se mantiene el aviso de fragmentos
   grandes asociado principalmente a Monaco.
 - `npm test` no pudo iniciar porque el ejecutable global de npm apunta a un `npm-cli.js` inexistente.
   Se ejecutó directamente el mismo runner configurado por el proyecto (`node --test`).
 - No hay pruebas automatizadas de interfaz ni se realizó una comprobación manual de la aplicación.
+- El intento posterior de abrir Prisma con `tauri dev` inició Vite y compiló Rust, pero WebView2
+  abortó al crear la ventana con `0x800700AA` (recurso solicitado en uso). La vista de navegador
+  tampoco pudo abrirse: el control de automatización no identificó con suficiente certeza la URL
+  activa y detuvo la acción. Por tanto, la revisión visual sigue pendiente por una limitación del
+  entorno, no por un resultado de interfaz aprobado.
+
+#### M2.5.0 — Diseño responsive
+
+- El lienzo conserva sus presets de escritorio, tableta y móvil, y añade cambio de orientación
+  y un control `Ajustar` que modifica solo el zoom visual; las dimensiones CSS del viewport no
+  cambian al ajustar. La selección del elemento se mantiene al cambiar dimensiones.
+- El inspector permite elegir `General` o un breakpoint simple detectado en CSS (`min-width`/
+  `max-width`, en `px`, `em` o `rem`), crear breakpoints `max-width`, editar su condición y
+  seleccionar el breakpoint para llevar el ancho del lienzo a su valor. Los breakpoints se
+  reconocen desde la hoja CSS actualmente seleccionada.
+- Las propiedades compatibles que ya expone el inspector pueden escribirse en el contexto
+  seleccionado. En un contexto responsive el campo queda vacío cuando la regla no define esa
+  propiedad, muestra el valor general como referencia y ofrece restablecer la declaración para
+  volver a heredar. La escritura localizada conserva el resto del CSS y el historial existente
+  incluye los cambios responsive.
+- Solo se permite borrar breakpoints vacíos; se deshabilita la acción cuando el bloque tiene
+  reglas o contenido no reconocido para evitar descartar CSS. Crear un ancho máximo equivalente
+  reutiliza el breakpoint existente.
+- Las consultas simples de viewport se previsualizan mediante el mecanismo de container queries
+  ya existente. El editor no calcula la cascada/especificidad completa: no se presentan valores
+  calculados desde selectores complejos como si fueran seguros. Las condiciones complejas, las
+  reglas repetidas con la misma condición, capas CSS y casos avanzados deben revisarse en Código.
+- El aviso de desbordamiento del contenido no está implementado; la interfaz no cuenta con
+  pruebas automatizadas y falta una validación manual en la aplicación Tauri.
+- Archivos principales: `src/designer/cssEdit.ts`, `src/designer/cssEdit.test.ts`,
+  `src/hooks/useDesigner.ts`, `src/components/workspace/design/DesignCanvas.tsx` y
+  `src/components/workspace/design/PropertiesPanel.tsx`.
+
+Comprobaciones realizadas durante `M2.5.0`:
+
+- `tsc --noEmit` (binario local): correcto. `npx tsc --noEmit` no pudo iniciar porque falta
+  también el `npx-cli.js` global; la comprobación se hizo con el TypeScript local del proyecto.
+- `node --test "src/**/*.test.ts"`: 311 pruebas correctas en 42 suites.
+- `vite build` (binario local): correcto, con la advertencia existente de fragmentos grandes,
+  principalmente por Monaco.
+- `npm test` y `npm run build` no pudieron arrancar porque el lanzador global de npm apunta a
+  `C:\Users\Lab5-19\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js`, archivo que no
+  existe. Sus verificaciones equivalentes se ejecutaron directamente con los binarios locales y
+  `node --test`.
+- No se modificó Rust ni se añadieron dependencias.
+
+#### M2.6.0 — Organización del árbol y ayuda contextual
+
+- Se añadió `src/designer/catalog.ts`, catálogo central de nombres en español para todas las
+  etiquetas HTML que reconoce `KNOWN_TAGS`, descripciones semánticas y ejemplos para etiquetas
+  habituales. Las etiquetas desconocidas y componentes propios mantienen su nombre original y
+  reciben una descripción que deja claro que su significado depende del proyecto.
+- La biblioteca busca también por nombre en español y muestra ese nombre junto a la etiqueta
+  HTML. El árbol conserva el recorrido padre-hijo del modelo visual y ahora muestra como texto
+  principal el nombre descriptivo, con `<tag>` e `#id` como referencias secundarias. La traducción
+  no se usa para editar ni serializar el documento.
+- Al seleccionar desde el lienzo un descendiente bajo padres contraídos, el árbol expande esos
+  padres y desplaza la selección a la vista. Se añaden niveles y posiciones ARIA para exponer la
+  jerarquía al lector de pantalla; no se aplana ni se reordena el documento.
+- El botón `?` abre ayuda con teclado o ratón, admite cierre al pulsar fuera o Escape y detiene la
+  propagación de eventos para no activar selección o arrastre. La ayuda se monta fuera de los
+  paneles desplazables, se coloca junto al botón y se mantiene dentro de los límites de la ventana.
+  Se ofrece en los elementos del árbol y la biblioteca, y junto a las propiedades y atributos
+  editables del inspector. La ayuda de `type` distingue `input`, `button` y `script`; el resto se
+  describe según su etiqueta o propiedad.
+- El árbol conserva la vista de nodos visuales existente; comentarios y elementos técnicos que el
+  diseñador filtra (por ejemplo `head`, `script` y `style`) siguen en el modelo y el archivo, pero
+  no se listan como componentes del lienzo.
+- Archivos principales: `src/designer/catalog.ts`, `src/designer/catalog.test.ts`,
+  `src/components/workspace/design/ContextHelp.tsx`, `DesignTree.tsx`, `DesignPanel.tsx`,
+  `PropertiesPanel.tsx` y `design.css`.
+
+Comprobaciones realizadas durante `M2.6.0`:
+
+- `tsc --noEmit` (binario local): correcto.
+- `node --test "src/**/*.test.ts"`: 316 pruebas correctas en 43 suites.
+- `vite build` (binario local): correcto, con la advertencia existente de fragmentos grandes,
+  principalmente por Monaco.
+- `npm test` y `npm run build` no pudieron iniciar: el lanzador global de npm apunta a un
+  `npm-cli.js` inexistente. El mismo runner se ejecutó directamente con Node y la compilación
+  directamente con Vite local.
+- No se modificó Rust ni se añadieron dependencias. La interfaz no tiene pruebas automatizadas;
+  falta la comprobación manual en los temas Claro, Oscuro y Neo.
+
+#### M3.0.0 — Arquitectura del panel de propiedades
+
+- El inspector ahora organiza las propiedades en cuatro pestañas: `Estilos`, `HTML`, `Código` y
+  `Acciones`. Las pestañas solo cambian la vista; la edición sigue usando las operaciones
+  existentes de `useDesigner`.
+- La cabecera identifica el nodo seleccionado con el nombre descriptivo y etiqueta original, y
+  muestra el `id` y las clases reales cuando existen. No se crean atributos para completar datos
+  ausentes.
+- `Estilos` agrupa disposición y propiedades CSS, incluidos los breakpoints actuales. `HTML`
+  agrupa texto, identificación y atributos. `Acciones` conserva duplicar, subir, bajar y eliminar.
+- `Código` muestra el fragmento que el modelo ya conserva y su archivo/línea cuando están
+  disponibles. `Abrir en el editor` reutiliza Monaco y navega a la línea de origen. Si hay cambios
+  visuales pendientes, la acción se llama `Aplicar y abrir en código` y aplica esos cambios antes
+  de cambiar de vista, evitando descartarlos silenciosamente. No se añadió otro editor.
+- La navegación mantiene la selección y no cambia el documento por sí misma. Los controles siguen
+  conectados al mismo modelo e historial de deshacer/rehacer; el estado sin selección conserva la
+  indicación para elegir un elemento.
+- El diseño de pestañas usa tokens de tema y reduce el ancho del inspector en ventanas estrechas.
+- Archivos modificados para M3.0.0: `src/components/workspace/design/PropertiesPanel.tsx`,
+  `src/components/workspace/design/design.css`, `src/components/workspace/Workspace.tsx` y este
+  README.
+
+Comprobaciones realizadas durante `M3.0.0`:
+
+- `tsc --noEmit` (binario local): correcto.
+- `node --test "src/**/*.test.ts"`: 316 pruebas correctas en 43 suites.
+- `vite build` (binario local): correcto; mantiene el aviso de fragmentos grandes asociado
+  principalmente a Monaco.
+- Se usaron los binarios locales directamente porque los lanzadores globales de `npm`/`npx`
+  anotados en el entorno no encuentran su `npm-cli.js`; no se pudo ejecutar literalmente
+  `npx tsc --noEmit`, `npm test` ni `npm run build`.
+- No hay pruebas automatizadas de componentes React ni se realizó una comprobación manual de la
+  interfaz. Queda revisar navegación, edición, retorno a Código, tema y ventana pequeña en la
+  aplicación de escritorio.
+- No se modificó Rust ni se añadieron dependencias.
+
+#### M3.1.0 — Editor visual de estilos CSS
+
+- La pestaña `Estilos` se separó en `src/components/workspace/design/StyleEditor.tsx`. Sus
+  grupos plegables son dimensiones, espaciado, apariencia, tipografía, distribución, posición en
+  el lienzo y otras propiedades declaradas. Se añadieron controles para ancho/alto y límites,
+  margin/padding general o por lado, color, opacidad, borde, radio, sombra, tipografía,
+  posicionamiento, z-index, overflow, Flexbox básico y plantillas de columnas/filas Grid.
+- Los valores CSS se editan como texto para conservar unidades y funciones existentes (`rem`, `%`,
+  `var()`, `calc()`, `currentColor`, entre otras). Los campos de color ofrecen un selector incluso
+  cuando aún no existe declaración; elegirlo crea o reemplaza el valor CSS. Las medidas comunes
+  ofrecen entrada numérica y selector de unidad; propiedades numéricas como opacidad, z-index,
+  line-height y flex ofrecen controles numéricos adecuados. Se añadieron opciones para propiedades
+  frecuentes de fondo, tipografía, imagen, visibilidad, cursor, caja, Flexbox y Grid. Los valores
+  complejos o no incluidos entre las opciones siguen disponibles como texto CSS y no se convierten
+  ni se descartan automáticamente.
+- El modo vinculado edita el shorthand existente `margin` o `padding`. Al desvincular, los cuatro
+  lados se editan mediante declaraciones longhand separadas, sin expandir ni borrar automáticamente
+  el shorthand previo. La interfaz avisa cuando conserva un shorthand que esos valores pueden
+  sobreescribir.
+- Se distingue entre declaraciones directas y valores calculados: Prisma no resuelve toda la
+  cascada, herencia, estilos de navegador, pseudoestados ni selectores arbitrarios. El inspector
+  muestra el destino activo y el selector único que editaría; si no existe una clase o un `id`
+  simple único, desactiva las propiedades de hoja de estilos en lugar de inventar una clase.
+- Si una propiedad ya está en `style="..."`, el estilo base cambia solo esa declaración inline y
+  conserva las demás. Si una propiedad queda cubierta por un shorthand inline, la edición se
+  bloquea y se explica el motivo. Una propiedad inline no se puede sobrescribir de manera segura
+  desde un breakpoint y el campo se desactiva allí. Los cambios de hoja externa e interna reutilizan
+  el destino CSS actual del diseñador y su escritura localizada; comentarios y declaraciones no
+  relacionadas se conservan.
+- Breakpoints reutiliza el selector actual del lienzo; se muestran como estilo base o como la
+  condición `@media` activa. Al leer y editar condiciones repetidas, el sistema considera el último
+  bloque coincidente, manteniendo los bloques anteriores y el resto de sus reglas.
+- El texto confirma al salir del campo o pulsar Enter; las opciones y el selector de color se
+  confirman al elegir un valor. Las ediciones usan el historial CSS/HTML existente. La persistencia
+  se realiza con `Aplicar cambios`/`Guardar` del diseñador, no al cambiar de pestaña.
+- Se añadieron `readDeclarations`, `readResponsiveDeclarations` y utilidades de lectura/escritura
+  inline en `src/designer/cssEdit.ts`; `useDesigner` expone declaraciones del selector y evita
+  generar una clase automática en una edición CSS ordinaria. El movimiento del lienzo conserva su
+  operación de posicionamiento existente.
+- Archivos de M3.1.0: `src/components/workspace/design/StyleEditor.tsx`,
+  `PropertiesPanel.tsx`, `design.css`, `src/designer/cssEdit.ts`, `cssEdit.test.ts`,
+  `src/hooks/useDesigner.ts` y este README.
+
+Comprobaciones realizadas durante `M3.1.0`:
+
+- Binario local de TypeScript (`tsc --noEmit`): correcto.
+- Runner local de Node: 320 pruebas correctas en 43 suites, incluidas lecturas y escrituras de
+  declaraciones base, inline y responsive, variables CSS, comentarios, propiedades repetidas y
+  bloques `@media` repetidos.
+- Binario local de Vite (`vite build`): correcto; sigue mostrando el aviso de fragmentos grandes
+  asociado principalmente a Monaco.
+- Los comandos literales `npx tsc --noEmit`, `npm test` y `npm run build` no pueden iniciar en este
+  entorno porque sus lanzadores globales buscan `npx-cli.js`/`npm-cli.js` en una instalación
+  inexistente. Se ejecutaron correctamente las herramientas locales equivalentes.
+- No hay pruebas automatizadas de componentes ni de interfaz y no se ejecutó la aplicación para
+  hacer una prueba manual. La revisión visual, el cambio de selección y la comprobación de guardado
+  y reapertura quedan pendientes.
+- No se modificó Rust ni se añadieron dependencias.
+
+#### M3.2.0 — Catálogo dinámico de propiedades HTML y CSS
+
+- Se añadió `src/designer/propertyCatalog.ts`, un catálogo tipado que separa atributos globales,
+  atributos por etiqueta, controles, opciones, ayuda en español y condiciones para campos de
+  `<input type>`. `PropertiesPanel` lo interpreta para generar los controles; las definiciones ya
+  no dependen de tablas de etiquetas dentro del componente React.
+- El grupo `General` ofrece `id`, `class` y atributos globales `title`, `lang`, `dir`, `hidden`,
+  `tabindex`, `accesskey`, `draggable`, `contenteditable`, `spellcheck`, `translate` e `inert`.
+  `style` sigue integrado con el editor CSS M3.1.0. Los atributos `data-*`, `aria-*`, eventos
+  existentes y nombres desconocidos se conservan y se pueden editar o eliminar desde `Otros
+  atributos`; los eventos se mantienen como texto y no se instalan como manejadores en el canvas.
+- Hay propiedades especializadas para `a`, `area`, `img`, `source`, `audio`, `video`, `track`,
+  `iframe`, `form`, `input`, `button`, `textarea`, `select`, `option`, `optgroup`, `label`,
+  `fieldset`, `output`, `progress`, `meter`, `table`, `th`, `td`, `col`, `colgroup`, `ol`, `li`,
+  `blockquote`, `q`, `ins`, `del`, `time`, `data`, `abbr`, `details`, `dialog`, `canvas`, `map`,
+  `object`, `embed`, `param`, `meta`, `link`, `script`, `style` y `base`. Incluyen sus atributos
+  usuales; los booleanos se editan por presencia/ausencia, los enumerados preservan como opción
+  visible un valor actual desconocido y los campos de `<input>` se filtran según `type` sin borrar
+  los atributos ocultos por ese filtro.
+- Las etiquetas sin definición específica de atributos son `address`, `article`, `aside`, `b`,
+  `bdi`, `bdo`, `body`, `br`, `caption`, `cite`, `code`, `datalist`, `dd`, `dfn`, `div`, `dl`,
+  `dt`, `em`, `figcaption`, `figure`, `footer`, `h1`–`h6`, `head`, `header`, `hgroup`, `hr`,
+  `html`, `i`, `kbd`, `legend`, `main`, `mark`, `menu`, `nav`, `noscript`, `p`, `pre`, `rp`, `rt`,
+  `ruby`, `s`, `samp`, `search`, `section`, `slot`, `small`, `span`, `strong`, `sub`, `summary`,
+  `sup`, `tbody`, `template`, `tfoot`, `thead`, `tr`, `u`, `ul`, `var` y `wbr`. Conservan el
+  nombre y los atributos editables genéricamente; el catálogo no declara cobertura completa de la
+  especificación HTML. Los grupos CSS generales siguen usando el editor M3.1.0. Se añadieron
+  accesos CSS recomendados para enlaces, imágenes, vídeo, tablas y celdas, controles de formulario,
+  listas y diálogos, conectados al mismo editor CSS, selector y escritura existente.
+- Actualizar o quitar un atributo usa la modificación localizada de la etiqueta existente y no
+  reemplaza sus nodos hijos. Las pruebas cubren conservación de comentarios, expresiones Blade,
+  atributos ajenos, recursos `<script>` conservados sin ejecución y elementos personalizados.
+  Editar atributos de apertura de `<script>` y `<style>` ahora está permitido; sus cuerpos de texto
+  continúan fuera de la ejecución y no se modifican al actualizar esos atributos.
+- En el canvas se omiten los atributos de evento, se impide navegar desde enlaces y enviar
+  formularios, y no se cargan URL HTTP/HTTPS en imágenes. `iframe`, `object`, `audio` y `video` se
+  representan con una ficha estática para no cargar contenido externo durante la edición.
+- Limitaciones: la infraestructura actual no lleva un espacio de nombres HTML/SVG en el modelo y
+  el parser normaliza nombres de etiquetas a minúsculas; por eso los elementos SVG como `path`,
+  `circle`, `rect`, `line`, `polyline`, `polygon`, `ellipse`, `text` y `foreignObject` aún no tienen
+  catálogo especializado y se conservan genéricamente. La cobertura específica de otras etiquetas
+  estándar que no aparecen en la lista anterior también está pendiente.
+  Las referencias remotas `url()` que ya existan en hojas CSS del proyecto todavía participan en
+  la previsualización del lienzo; el editor no ejecuta scripts, pero aún no filtra esos recursos CSS.
+  Tampoco hay pruebas automatizadas de React/canvas ni una prueba de guardar y reabrir desde la
+  interfaz; esos puntos requieren revisión manual.
+- Archivos principales de M3.2.0: `src/designer/propertyCatalog.ts` y su prueba,
+  `src/components/workspace/design/PropertiesPanel.tsx`, `StyleEditor.tsx`, `DesignCanvas.tsx`,
+  `design.css`, `src/designer/attributes.ts`, `edit.ts`, pruebas de atributos/clases y este README.
+
+Comprobaciones realizadas durante `M3.2.0`:
+
+- Los comandos literales `npx tsc --noEmit`, `npm test` y `npm run build` no arrancan porque los
+  lanzadores globales del entorno buscan `npx-cli.js`/`npm-cli.js` en una instalación inexistente.
+- Equivalentes locales: `node_modules/.bin/tsc --noEmit` correcto; `node --test "src/**/*.test.ts"`
+  ejecutó 326 pruebas en 44 suites, todas correctas; `node_modules/.bin/vite build` compiló
+  correctamente. Vite mantiene el aviso de fragmentos grandes asociado principalmente a Monaco.
+- No se modificó Rust ni se añadieron dependencias. La aplicación Tauri no se probó manualmente;
+  falta revisar controles, cambios de tipo en input, undo/redo, CSS, y guardado/reapertura en Claro,
+  Oscuro y Neo.
 
 ## Estado actual
 
@@ -852,8 +1097,8 @@ Limitaciones conocidas de `M2.1.0`:
 Limitaciones actuales del diseñador:
 
 - No hay controles de redimensionamiento por arrastre; el tamaño se ajusta desde el inspector.
-- Las consultas responsive por ancho se previsualizan; otras reglas `@media` y reglas `@supports`
-  avanzadas se editan en el editor de código.
+- Las consultas responsive simples se previsualizan y editan desde el inspector. Otras reglas
+  `@media`, `@supports` y casos de cascada avanzada se editan en el editor de código.
 - Al aplicar, el HTML y el CSS externo pasan por búferes y respetan la detección de cambios
   externos. Las hojas CSS cargadas por el diseñador pueden quedar en búfer aunque no tengan una
   pestaña abierta.

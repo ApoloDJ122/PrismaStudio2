@@ -6,7 +6,7 @@ import type { ProjectNode } from "../../../types/project";
 import { linkedStylesheets } from "../../../designer/edit";
 import { readAttribute } from "../../../designer/attributes";
 import { isContainerTag, isVoidTag } from "../../../designer/html";
-import { readDeclaration, scopeResponsiveCss } from "../../../designer/cssEdit";
+import { scopeResponsiveCss } from "../../../designer/cssEdit";
 import { displayLabel, visualChildren } from "../../../designer/visual";
 import type { DesignerState } from "../../../hooks/useDesigner";
 import "./design.css";
@@ -15,7 +15,7 @@ import "./design.css";
 const CANVAS_SCOPE = ".ds-page";
 
 function clampZoom(value: number): number {
-  return Math.min(2, Math.max(0.25, Math.round(value * 100) / 100));
+  return Math.min(2, Math.max(0.1, Math.round(value * 100) / 100));
 }
 
 interface ResizeBounds {
@@ -114,7 +114,8 @@ function parseInlineStyle(value: string): CSSProperties {
 
 interface NodeViewProps {
   node: PrismaNode;
-  cssText: string;
+  positionBox: { x: number; y: number } | null;
+  getPositionBox: (id: PrismaId) => { x: number; y: number } | null;
   selectedId: PrismaId | null;
   dropTargetId: PrismaId | null;
   draggingId: PrismaId | null;
@@ -150,12 +151,24 @@ function ImgView({
     );
   }
 
+  // El canvas es un editor, no un visor de sitios externos. No inicia solicitudes
+  // de red al seleccionar un documento importado.
+  if (/^(?:https?:)?\/\//i.test(src.trim())) {
+    return (
+      <div {...props} className={`${props.className ?? ""} ds-img-fallback`.trim()}>
+        <span className="ds-img-fallback__icon" aria-hidden="true">◧</span>
+        <span>{alt} · recurso externo</span>
+      </div>
+    );
+  }
+
   return <img {...props} src={src} alt={alt} onError={() => setFailed(true)} />;
 }
 
 function NodeView({
   node,
-  cssText,
+  positionBox,
+  getPositionBox,
   selectedId,
   dropTargetId,
   draggingId,
@@ -210,28 +223,19 @@ function NodeView({
       inline = parseInlineStyle(value);
     } else if (name === "for" && node.tag === "label") {
       attrs.htmlFor = value;
+    } else if (/^on[a-z]/i.test(name)) {
+      // Conservado en el modelo/HTML, pero nunca instalado como manejador activo.
+      continue;
     } else {
       attrs[a.name] = value;
     }
   }
 
-  // Las posiciones se escriben en CSS del proyecto. Reflejarlas como estilo
-  // de vista evita que el layout base de etiquetas vacías las reúna en una fila
-  // si el navegador del lienzo todavía está resolviendo la hoja enlazada.
-  let canvasPosition: CSSProperties | undefined;
-  if (node.kind === "element") {
-    const classNames = readAttribute(node, "class")?.split(/\s+/).filter(Boolean) ?? [];
-    for (const name of classNames) {
-      const selector = `.${name}`;
-      const position = readDeclaration(cssText, selector, "position");
-      const left = readDeclaration(cssText, selector, "left");
-      const top = readDeclaration(cssText, selector, "top");
-      if (position === "absolute" && left !== null && top !== null) {
-        canvasPosition = { position: "absolute", left, top };
-        break;
-      }
-    }
-  }
+  // Usa la caja calculada por el selector único del diseñador. Buscar la
+  // primera clase con posición elegía la del original en copias duplicadas.
+  const canvasPosition: CSSProperties | undefined = positionBox === null
+    ? undefined
+    : { position: "absolute", left: positionBox.x, top: positionBox.y };
 
   const className = [
     authorClass,
@@ -285,10 +289,17 @@ function NodeView({
     return <textarea {...common} readOnly value={node.children.map((c) => c.content ?? "").join("")} />;
   }
 
+  if (["iframe", "object", "audio", "video"].includes(node.tag)) {
+    const label = ({ iframe: "Marco externo", object: "Objeto incrustado", audio: "Audio", video: "Vídeo" } as const)[node.tag as "iframe" | "object" | "audio" | "video"];
+    return <div {...common} className={`${className} ds-resource-placeholder`} aria-label={`${label}; no se carga en el diseñador`}>{label} · vista de edición</div>;
+  }
+
   const Tag: any = node.tag;
   return (
     <Tag
       {...common}
+      onClick={(event: React.MouseEvent) => { if (node.tag === "a") event.preventDefault(); }}
+      onSubmit={(event: React.FormEvent) => { if (node.tag === "form") event.preventDefault(); }}
       onPointerOver={(e: React.PointerEvent) => {
         e.stopPropagation();
         if (draggingId !== null && draggingId !== node.id && isContainerTag(node.tag as string)) {
@@ -310,7 +321,8 @@ function NodeView({
         <NodeView
           key={child.id}
           node={child}
-          cssText={cssText}
+          positionBox={getPositionBox(child.id)}
+          getPositionBox={getPositionBox}
           selectedId={selectedId}
           dropTargetId={dropTargetId}
           draggingId={draggingId}
@@ -519,6 +531,17 @@ export function DesignCanvas({
       localStorage.setItem(VIEWPORT_STORAGE_KEY, JSON.stringify({ mode: viewport, size: viewportSize }));
     } catch {}
   }, [viewport, viewportSize]);
+
+  useEffect(() => {
+    const selectResponsiveViewport = (event: Event) => {
+      const width = (event as CustomEvent<number>).detail;
+      if (!Number.isFinite(width) || width < 320 || width > 7680) return;
+      setViewport("custom");
+      setViewportSize((current) => ({ ...current, width: Math.round(width) }));
+    };
+    window.addEventListener("prisma-responsive-viewport", selectResponsiveViewport);
+    return () => window.removeEventListener("prisma-responsive-viewport", selectResponsiveViewport);
+  }, []);
 
   // La biblioteca y el lienzo son paneles hermanos. Gestionar el gesto en la
   // ventana evita depender del drag-and-drop nativo del WebView de Tauri.
@@ -871,6 +894,12 @@ export function DesignCanvas({
           />
           <span>px</span>
         </label>
+        <button type="button" className="ds-zoom__btn" title="Cambiar orientación" aria-label="Cambiar orientación" onClick={() => setViewportSize(({ width, height }) => ({ width: height, height: width }))}>↻</button>
+        <button type="button" className="ds-zoom__btn" title="Ajustar lienzo al espacio disponible" aria-label="Ajustar lienzo" onClick={() => {
+          const bounds = wrapRef.current?.getBoundingClientRect();
+          if (!bounds || pageWidth < 1 || pageHeight < 1) return;
+          setZoom(clampZoom(Math.min((bounds.width - 32) / pageWidth, (bounds.height - 32) / pageHeight)));
+        }}>Ajustar</button>
         <button
           type="button"
           className="ds-zoom__btn"
@@ -922,7 +951,8 @@ export function DesignCanvas({
                 <NodeView
                   key={node.id}
                   node={node}
-          cssText={designer.cssText}
+                  positionBox={designer.nodeBox(node.id)}
+                  getPositionBox={designer.nodeBox}
                   selectedId={designer.selectedId}
                   dropTargetId={dropTargetId}
                   draggingId={draggingId}

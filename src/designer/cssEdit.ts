@@ -25,6 +25,202 @@ export interface Box {
   y: number;
 }
 
+export interface ResponsiveBreakpoint {
+  condition: string;
+  kind: "min-width" | "max-width";
+  width: number;
+  ruleCount: number;
+}
+
+/** Breakpoints editables: únicamente consultas simples de ancho a nivel raíz. */
+export function responsiveBreakpoints(text: string): ResponsiveBreakpoint[] {
+  const out: ResponsiveBreakpoint[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    if (text[cursor] === "/" && text[cursor + 1] === "*") { cursor = skipComment(text, cursor); continue; }
+    if (text[cursor] === '"' || text[cursor] === "'") { cursor = skipString(text, cursor); continue; }
+    if (text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end < 0) break;
+      const header = text.slice(0, cursor).slice(Math.max(text.lastIndexOf("}", cursor - 1), text.lastIndexOf(";", cursor - 1)) + 1).trim();
+      if (/^@media\b/i.test(header)) {
+        const condition = header.replace(/^@media\s*/i, "").trim();
+        const match = /^\(\s*(min|max)-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|em|rem)\s*\)$/i.exec(condition);
+        if (match) {
+          const direction = match[1] ?? "max";
+          const unit = match[3] ?? "px";
+          const kind = `${direction.toLowerCase()}-width` as ResponsiveBreakpoint["kind"];
+          const width = Number(match[2] ?? 0) * (unit.toLowerCase() === "px" ? 1 : 16);
+          const inner = text.slice(cursor + 1, end);
+          const meaningful = inner.replace(/\/\*[\s\S]*?\*\//g, "").trim();
+          const ruleCount = meaningful === "" ? 0 : Math.max(1, scanRules(inner).length);
+          if (!out.some((item) => item.condition.toLowerCase() === condition.toLowerCase())) out.push({ condition, kind, width, ruleCount });
+        }
+      }
+      cursor = end + 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  return out;
+}
+
+/** Añade @media max-width evitando condiciones equivalentes ya presentes. */
+export function addResponsiveBreakpoint(text: string, width: number): string {
+  if (!Number.isFinite(width) || width < 1) return text;
+  const existing = responsiveBreakpoints(text).find((item) => item.kind === "max-width" && item.width === width);
+  if (existing) return text;
+  const separator = text.trim() === "" || text.endsWith("\n") ? "" : "\n";
+  return `${text}${separator}\n@media (max-width: ${Math.round(width)}px) {\n}\n`;
+}
+
+/** Cambia la condición simple, preservando el bloque y todas sus reglas. */
+export function renameResponsiveBreakpoint(text: string, condition: string, nextCondition: string): string {
+  const valid = /^\(\s*(?:min|max)-width\s*:\s*\d+(?:\.\d+)?\s*(?:px|em|rem)\s*\)$/i;
+  if (!valid.test(condition) || !valid.test(nextCondition)) return text;
+  let cursor = 0;
+  while (cursor < text.length) {
+    if (text[cursor] === "/" && text[cursor + 1] === "*") { cursor = skipComment(text, cursor); continue; }
+    if (text[cursor] === '"' || text[cursor] === "'") { cursor = skipString(text, cursor); continue; }
+    if (text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end < 0) return text;
+      const start = Math.max(text.lastIndexOf("}", cursor - 1), text.lastIndexOf(";", cursor - 1)) + 1;
+      const header = text.slice(start, cursor).trim();
+      if (header.toLowerCase() === `@media ${condition}`.toLowerCase()) {
+        const headerStart = text.indexOf("@media", start);
+        return `${text.slice(0, headerStart)}@media ${nextCondition}${text.slice(cursor)}`;
+      }
+      cursor = end + 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  return text;
+}
+
+/** Elimina solo una consulta vacía; nunca descarta reglas CSS del usuario. */
+export function removeEmptyResponsiveBreakpoint(text: string, condition: string): string {
+  const breakpoint = responsiveBreakpoints(text).find((item) => item.condition === condition);
+  if (!breakpoint || breakpoint.ruleCount !== 0) return text;
+  const marker = `@media ${condition}`;
+  const index = text.toLowerCase().indexOf(marker.toLowerCase());
+  const open = text.indexOf("{", index + marker.length);
+  const close = open < 0 ? -1 : matchBrace(text, open);
+  const body = open < 0 || close < 0 ? "" : text.slice(open + 1, close);
+  if (index < 0 || open < 0 || close < 0 || body.replace(/\/\*[\s\S]*?\*\//g, "").trim() !== "") return text;
+  let start = index;
+  while (start > 0 && (text[start - 1] === " " || text[start - 1] === "\t")) start -= 1;
+  let end = close + 1;
+  if (text[end] === "\r") end += 1;
+  if (text[end] === "\n") end += 1;
+  return `${text.slice(0, start)}${text.slice(end)}`;
+}
+
+/** Escribe una sola propiedad dentro del selector de un @media soportado. */
+export function writeResponsiveDeclaration(text: string, condition: string, selector: string, property: string, value: string): string {
+  const match = /^\(\s*(?:min|max)-width\s*:\s*\d+(?:\.\d+)?\s*(?:px|em|rem)\s*\)$/i.exec(condition.trim());
+  if (!match) return text;
+  let cursor = 0;
+  let lastBlock: { open: number; end: number } | null = null;
+  while (cursor < text.length) {
+    if (text[cursor] === "/" && text[cursor + 1] === "*") { cursor = skipComment(text, cursor); continue; }
+    if (text[cursor] === '"' || text[cursor] === "'") { cursor = skipString(text, cursor); continue; }
+    if (text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end < 0) return text;
+      const header = text.slice(0, cursor).slice(Math.max(text.lastIndexOf("}", cursor - 1), text.lastIndexOf(";", cursor - 1)) + 1).trim();
+      if (header.toLowerCase() === `@media ${condition}`.toLowerCase()) {
+        lastBlock = { open: cursor, end };
+      }
+      cursor = end + 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  if (lastBlock !== null) {
+    const inner = text.slice(lastBlock.open + 1, lastBlock.end);
+    const next = value.trim() === "" ? removeDeclaration(inner, selector, property) : writeDeclaration(inner, selector, property, value.trim());
+    if (next === inner) return text;
+    return `${text.slice(0, lastBlock.open + 1)}${next}${text.slice(lastBlock.end)}`;
+  }
+  if (value.trim() === "") return text;
+  const created = writeDeclaration("", selector, property, value.trim());
+  const separator = text.trim() === "" || text.endsWith("\n") ? "" : "\n";
+  return `${text}${separator}\n@media ${condition} {\n${created}\n}\n`;
+}
+
+/** Lee solo una declaración explícita del breakpoint, nunca el valor global. */
+export function readResponsiveDeclaration(text: string, condition: string, selector: string, property: string): string | null {
+  let cursor = 0;
+  let value: string | null = null;
+  while (cursor < text.length) {
+    if (text[cursor] === "/" && text[cursor + 1] === "*") { cursor = skipComment(text, cursor); continue; }
+    if (text[cursor] === '"' || text[cursor] === "'") { cursor = skipString(text, cursor); continue; }
+    if (text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end < 0) return null;
+      const start = Math.max(text.lastIndexOf("}", cursor - 1), text.lastIndexOf(";", cursor - 1)) + 1;
+      if (text.slice(start, cursor).trim().toLowerCase() === `@media ${condition}`.toLowerCase()) {
+        const next = readDeclaration(text.slice(cursor + 1, end), selector, property);
+        if (next !== null) value = next;
+      }
+      cursor = end + 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  return value;
+}
+
+/** Declaraciones propias de una regla exacta, en el orden del archivo. */
+export function readDeclarations(text: string, selector: string): { property: string; value: string }[] {
+  const rule = findSingleRule(text, selector);
+  if (rule === null) return [];
+  return splitDeclarations(text.slice(rule.bodyStart, rule.bodyEnd)).map(({ property, value }) => ({ property, value }));
+}
+
+/** Lee declaraciones de `style="..."` sin confundirlas con CSS calculado. */
+export function readInlineDeclarations(text: string): { property: string; value: string }[] {
+  return splitDeclarations(text).map(({ property, value }) => ({ property, value }));
+}
+
+/** Cambia solo la declaración inline solicitada y conserva el resto del atributo. */
+export function writeInlineDeclaration(text: string, property: string, value: string): string {
+  const declarations = splitDeclarations(text);
+  const existing = lastDeclaration(declarations, property.toLowerCase());
+  if (value.trim() !== "") return upsertDeclaration(text, property.toLowerCase(), value.trim());
+  if (existing === undefined) return text;
+  const end = text[existing.end] === ";" ? existing.end + 1 : existing.end;
+  return `${text.slice(0, existing.propertyStart)}${text.slice(end)}`;
+}
+
+export function readInlineDeclaration(text: string, property: string): string | null {
+  return lastDeclaration(splitDeclarations(text), property.toLowerCase())?.value ?? null;
+}
+
+/** Declaraciones de una regla exacta dentro de un breakpoint simple. */
+export function readResponsiveDeclarations(text: string, condition: string, selector: string): { property: string; value: string }[] {
+  let cursor = 0;
+  const values = new Map<string, string>();
+  while (cursor < text.length) {
+    if (text[cursor] === "/" && text[cursor + 1] === "*") { cursor = skipComment(text, cursor); continue; }
+    if (text[cursor] === '"' || text[cursor] === "'") { cursor = skipString(text, cursor); continue; }
+    if (text[cursor] === "{") {
+      const end = matchBrace(text, cursor);
+      if (end < 0) return [];
+      const start = Math.max(text.lastIndexOf("}", cursor - 1), text.lastIndexOf(";", cursor - 1)) + 1;
+      if (text.slice(start, cursor).trim().toLowerCase() === `@media ${condition}`.toLowerCase()) {
+        for (const declaration of readDeclarations(text.slice(cursor + 1, end), selector)) values.set(declaration.property, declaration.value);
+      }
+      cursor = end + 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  return [...values].map(([property, value]) => ({ property, value }));
+}
+
 interface RuleSpan {
   /** Selector completo de la regla, tal y como está escrito. */
   selector: string;
@@ -45,6 +241,8 @@ interface Declaration {
   end: number;
   /** Posición del `:`. */
   colon: number;
+  /** Inicio del nombre de propiedad, separado de espacios y comentarios previos. */
+  propertyStart: number;
   property: string;
   value: string;
 }
@@ -216,6 +414,7 @@ function splitDeclarations(body: string): Declaration[] {
       start,
       end,
       colon: relativeColon,
+      propertyStart: start + propertyMatch.index,
       property: propertyMatch[1].toLowerCase(),
       value: body.slice(relativeColon + 1, end).trim(),
     });
@@ -249,6 +448,14 @@ function splitDeclarations(body: string): Declaration[] {
 
   push(body.length);
   return declarations;
+}
+
+function lastDeclaration(items: Declaration[], property: string): Declaration | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.property === property) return item;
+  }
+  return undefined;
 }
 
 /** Posición del `:` que separa propiedad de valor, ignorando cadenas y paréntesis. */
@@ -297,7 +504,7 @@ function hasImportant(value: string): boolean {
 function upsertDeclaration(body: string, property: string, value: string): string {
   const wanted = property.toLowerCase();
   const declarations = splitDeclarations(body);
-  const existing = declarations.find((item) => item.property === wanted);
+  const existing = lastDeclaration(declarations, wanted);
 
   if (existing !== undefined) {
     const next = hasImportant(existing.value) && !hasImportant(value)
@@ -419,7 +626,7 @@ export function readDeclaration(text: string, selector: string, property: string
   const body = text.slice(rule.bodyStart, rule.bodyEnd);
   const declarations = splitDeclarations(body);
   const wanted = property.toLowerCase();
-  const found = declarations.find((item) => item.property === wanted);
+  const found = lastDeclaration(declarations, wanted);
   return found === undefined ? null : found.value;
 }
 
@@ -458,13 +665,11 @@ export function removeDeclaration(text: string, selector: string, property: stri
   if (rule === null) return text;
 
   const body = text.slice(rule.bodyStart, rule.bodyEnd);
-  const declaration = splitDeclarations(body).find(
-    (item) => item.property === property.toLowerCase(),
-  );
+  const declaration = lastDeclaration(splitDeclarations(body), property.toLowerCase());
   if (declaration === undefined) return text;
 
   const end = body[declaration.end] === ";" ? declaration.end + 1 : declaration.end;
-  const next = `${body.slice(0, declaration.start)}${body.slice(end)}`;
+  const next = `${body.slice(0, declaration.propertyStart)}${body.slice(end)}`;
   return `${text.slice(0, rule.bodyStart)}${next}${text.slice(rule.bodyEnd)}`;
 }
 

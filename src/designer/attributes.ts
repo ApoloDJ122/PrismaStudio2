@@ -62,12 +62,6 @@ export function setAttribute(node: PrismaNode, name: string, value: string): boo
     return false;
   }
 
-  // `<script>` y `<style>` se conservan como bloques opacos: no son nodos
-  // visuales y sus etiquetas de apertura no se editan desde el diseñador.
-  if (node.tag === "script" || node.tag === "style") {
-    return false;
-  }
-
   const existing = findAttribute(node, name);
   const raw = `${existing?.name ?? name}="${escapeAttributeValue(value)}"`;
 
@@ -137,6 +131,7 @@ export function removeAttribute(node: PrismaNode, name: string): boolean {
  * nunca a `<button class="button-1">`.
  */
 export function appendClassName(node: PrismaNode, className: string): boolean {
+  if (node.tag === null || isRawTextTag(node.tag)) return false;
   const current = classList(node);
 
   if (current.includes(className)) {

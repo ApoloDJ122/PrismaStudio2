@@ -505,7 +505,7 @@ export function setNodeAttribute(roots: PrismaNode[], nodeId: PrismaId, name: st
 export function removeNodeAttribute(roots: PrismaNode[], nodeId: PrismaId, name: string): SimpleResult {
   const node = findById(roots, nodeId);
   if (node === null) return { ok: false, message: "El elemento ya no está en el documento." };
-  if (node.kind !== "element" || node.tag === null || node.tag === "script" || node.tag === "style") {
+  if (node.kind !== "element" || node.tag === null) {
     return { ok: false, message: "Este nodo no admite cambios en sus atributos." };
   }
   return removeAttribute(node, name)

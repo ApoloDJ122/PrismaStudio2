@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ELEMENT_PALETTE, type PaletteItem } from "../../../designer/palette";
 import { isContainerTag } from "../../../designer/html";
+import { tagInfo } from "../../../designer/catalog";
 import type { DesignerState } from "../../../hooks/useDesigner";
 import { DesignTree } from "./DesignTree";
+import { ContextHelp } from "./ContextHelp";
 import "./design.css";
 
 interface Props {
@@ -46,7 +48,7 @@ export function DesignPanel({ designer }: Props) {
           ? items
           : items.filter(
               (item) =>
-                item.tag.includes(needle) || item.label.toLowerCase().includes(needle),
+                item.tag.includes(needle) || item.label.toLowerCase().includes(needle) || tagInfo(item.tag).label.toLowerCase().includes(needle),
             ),
     }))
     .filter(({ items }) => items.length > 0);
@@ -81,12 +83,15 @@ export function DesignPanel({ designer }: Props) {
         {visible.map(({ group, items }) => (
           <details key={group} className="ds-lib__group" open>
             <summary className="ds-lib__group-head">{group}</summary>
-            {items.map((item) => (
-              <button
-                key={item.tag}
+            {items.map((item) => {
+              const info = tagInfo(item.tag);
+              return (
+              <div key={item.tag} className="ds-lib__entry">
+                <button
                 type="button"
                 className="ds-lib__item"
-                title={`Añadir <${item.tag}>`}
+                title={`${info.label} — ${info.description} (Añadir <${item.tag}>)`}
+                aria-label={`Añadir ${info.label}, etiqueta <${item.tag}>`}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
                   draggedRef.current = false;
@@ -104,9 +109,13 @@ export function DesignPanel({ designer }: Props) {
                 }}
                 onPointerCancel={() => window.dispatchEvent(new Event("prisma-palette-drag-cancel"))}
               >
+                <span className="ds-lib__label">{info.label}</span>
                 <code>{item.label}</code>
-              </button>
-            ))}
+                </button>
+                <ContextHelp title={info.label} description={info.description} example={info.example} />
+              </div>
+              );
+            })}
           </details>
         ))}
       </section>

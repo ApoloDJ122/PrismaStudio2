@@ -179,17 +179,47 @@
   cursor: pointer;
 }
 
-.ds-lib__group > button.ds-lib__item {
+.ds-lib__entry {
   display: inline-flex;
+  align-items: center;
   width: calc(50% - 3px);
+  box-sizing: border-box;
   margin: 1px;
+  padding: 0 3px;
   border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   background: var(--color-bg);
 }
 
+.ds-lib__entry > .ds-lib__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  width: 0;
+  padding: 5px 3px;
+  background: none;
+}
+
+.ds-lib__entry:hover { background-color: var(--color-bg-hover); }
+.ds-lib__entry .ds-help { margin-left: 2px; }
+
+.ds-lib__entry:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
 .ds-lib__item code {
-  font: inherit;
+  font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-text-subtle);
+}
+
+.ds-lib__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ds-lib__item:hover {
@@ -255,6 +285,21 @@
 
 .ds-tree__tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ds-tree__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ds-tree__original {
+  flex: none;
+  color: var(--color-text-subtle);
+  font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .ds-tree__hint {
@@ -263,6 +308,55 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.ds-help {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  vertical-align: middle;
+}
+
+.ds-help > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ds-help > summary::-webkit-details-marker { display: none; }
+.ds-help > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.ds-help[open] > summary { color: var(--color-accent); border-color: var(--color-accent-border); }
+
+.ds-help__popover {
+  position: fixed;
+  z-index: 60;
+  width: min(272px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: 0 6px 22px var(--color-shadow);
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: default;
+}
+
+.ds-help__popover p { margin: 5px 0; color: var(--color-text-muted); }
+.ds-help__popover code { display: block; margin-top: 6px; color: var(--color-text); }
+.ds-help__close { display: block; margin-top: 6px; color: var(--color-text-subtle); font-size: 10px; }
 
 /* Lienzo. */
 
@@ -585,6 +679,7 @@
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-sm);
 }
+.ds-resource-placeholder { display: flex; min-width: 80px; min-height: 36px; align-items: center; justify-content: center; border: 1px dashed var(--color-border-strong); color: var(--color-text-muted); background: var(--color-surface-muted); font-size: 11px; }
 
 .ds-error {
   padding: 12px;
@@ -612,6 +707,82 @@
   margin: 4px 0 0;
   font-size: 11px;
   color: var(--color-text-subtle);
+}
+
+.ds-inspector__identity {
+  padding: 9px 10px 7px;
+  border-bottom: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.ds-inspector__meta {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.ds-inspector__meta > span { color: var(--color-text-subtle); }
+
+.ds-inspector__tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ds-inspector__tab {
+  min-width: 0;
+  padding: 8px 2px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.ds-inspector__tab:hover { color: var(--color-text); background: var(--color-bg-hover); }
+.ds-inspector__tab--active { color: var(--color-text); border-bottom-color: var(--color-focus); font-weight: 700; }
+.ds-inspector__tab:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.ds-inspector__content { min-height: 0; }
+
+.ds-inspector__source {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.ds-style-editor { min-width: 0; }
+.ds-style-warning {
+  margin: 8px;
+  padding: 7px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+.ds-check { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; color: var(--color-text-muted); font-size: 11px; }
+.ds-field input[type="color"] { flex: none; width: 28px; min-width: 28px; height: 24px; padding: 1px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg); }
+.ds-color-control { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--color-text-muted); font-size: 11px; cursor: pointer; }
+.ds-color-control input[type="color"] { width: 30px; min-width: 30px; height: 26px; }
+.ds-length-control, .ds-opacity-control { display: flex; flex: 1 1 100%; min-width: 0; align-items: center; gap: 6px; }
+.ds-length-control .ds-field__input { min-width: 48px; }
+.ds-opacity-control input[type="range"] { flex: 1; min-width: 60px; accent-color: var(--color-accent); }
+.ds-opacity-control span { min-width: 90px; color: var(--color-text-subtle); font-size: 10px; }
+
+@media (max-width: 900px) {
+  .designer__right { width: 210px; }
+  .ds-inspector__tab { font-size: 10px; }
 }
 
 /* Inspector: campos en fila, etiqueta a la izquierda. */

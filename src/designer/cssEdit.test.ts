@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { ensurePositionRelative, hasRule, readBox, readDeclaration, scopeCss, stripAtRules, writeBox, writeDeclaration } from "./cssEdit.ts";
+import { addResponsiveBreakpoint, ensurePositionRelative, hasRule, readBox, readDeclaration, readDeclarations, readInlineDeclaration, readInlineDeclarations, readResponsiveDeclaration, readResponsiveDeclarations, removeEmptyResponsiveBreakpoint, renameResponsiveBreakpoint, responsiveBreakpoints, scopeCss, stripAtRules, writeBox, writeDeclaration, writeInlineDeclaration, writeResponsiveDeclaration } from "./cssEdit.ts";
 
 const { deepEqual, equal, ok } = assert;
 
@@ -10,6 +10,80 @@ function count(text: string, needle: string): number {
 }
 
 describe("M2.2.0 ediciones de texto CSS", () => {
+  it("lee declaraciones directas sin incluir comentarios ni reglas @media vecinas", () => {
+    const css = "/* keep */\n.card { color: red; --tone: var(--blue); }\n@media (max-width: 600px) { .card { color: blue; unknown: keep; } }";
+    deepEqual(readDeclarations(css, ".card"), [{ property: "color", value: "red" }, { property: "--tone", value: "var(--blue)" }]);
+    deepEqual(readResponsiveDeclarations(css, "(max-width: 600px)", ".card"), [{ property: "color", value: "blue" }, { property: "unknown", value: "keep" }]);
+    ok(css.startsWith("/* keep */"));
+  });
+
+  it("edita y lee la última declaración repetida sin eliminar las anteriores", () => {
+    const base = ".card { color: red; color: blue; margin: 2px; }";
+    const edited = writeDeclaration(base, ".card", "color", "green");
+    equal(readDeclaration(edited, ".card", "color"), "green");
+    equal((edited.match(/color:/g) ?? []).length, 2);
+    equal(edited.includes("color: red;"), true);
+    const removed = writeResponsiveDeclaration("@media (max-width: 600px) { .card { color: red; color: blue; } }", "(max-width: 600px)", ".card", "color", "");
+    equal(readResponsiveDeclaration(removed, "(max-width: 600px)", ".card", "color"), "red");
+  });
+
+  it("edita una declaración inline sin tocar las demás ni sus funciones CSS", () => {
+    const base = "color: var(--texto); /* conservar */ background: linear-gradient(red, blue); /* nota final */ color: blue;";
+    equal(readInlineDeclaration(base, "color"), "blue");
+    deepEqual(readInlineDeclarations(base).map(({ property }) => property), ["color", "background", "color"]);
+    const edited = writeInlineDeclaration(base, "color", "currentColor");
+    equal(readInlineDeclaration(edited, "color"), "currentColor");
+    ok(edited.includes("color: var(--texto);"));
+    ok(edited.includes("/* conservar */"));
+    ok(edited.includes("/* nota final */"));
+    ok(edited.includes("background: linear-gradient(red, blue);"));
+    const reset = writeInlineDeclaration(edited, "color", "");
+    equal(readInlineDeclaration(reset, "color"), "var(--texto)");
+    ok(reset.includes("/* nota final */"));
+  });
+
+  it("respeta bloques @media repetidos editando y leyendo la última declaración aplicable", () => {
+    const base = "@media (max-width: 600px) { .card { color: red; } }\n@media (max-width: 600px) { .card { color: blue; padding: 4px; } }";
+    equal(readResponsiveDeclaration(base, "(max-width: 600px)", ".card", "color"), "blue");
+    const edited = writeResponsiveDeclaration(base, "(max-width: 600px)", ".card", "color", "green");
+    equal(readResponsiveDeclaration(edited, "(max-width: 600px)", ".card", "color"), "green");
+    ok(edited.includes("color: red;"));
+    ok(edited.includes("padding: 4px;"));
+    deepEqual(readResponsiveDeclarations(edited, "(max-width: 600px)", ".card"), [{ property: "color", value: "green" }, { property: "padding", value: "4px" }]);
+  });
+
+  it("detecta y crea breakpoints max-width sin duplicar condiciones equivalentes", () => {
+    let css = ".card { color: red; }\n";
+    css = addResponsiveBreakpoint(css, 600);
+    const once = css;
+    css = addResponsiveBreakpoint(css, 600);
+    equal(css, once);
+    deepEqual(responsiveBreakpoints(css).map(({ condition, kind, width, ruleCount }) => ({ condition, kind, width, ruleCount })), [
+      { condition: "(max-width: 600px)", kind: "max-width", width: 600, ruleCount: 0 },
+    ]);
+  });
+
+  it("escribe, lee y restablece una propiedad en contexto sin tocar la regla global", () => {
+    const base = ".card { width: 600px; color: red; }\n@media (max-width: 600px) { .card { padding: 12px; } }";
+    const next = writeResponsiveDeclaration(base, "(max-width: 600px)", ".card", "width", "100%");
+    equal(readDeclaration(next, ".card", "width"), "600px");
+    equal(readResponsiveDeclaration(next, "(max-width: 600px)", ".card", "width"), "100%");
+    equal(readResponsiveDeclaration(next, "(max-width: 600px)", ".card", "padding"), "12px");
+    const reset = writeResponsiveDeclaration(next, "(max-width: 600px)", ".card", "width", "");
+    equal(readResponsiveDeclaration(reset, "(max-width: 600px)", ".card", "width"), null);
+    ok(reset.includes("padding: 12px;"));
+    equal(readDeclaration(reset, ".card", "width"), "600px");
+  });
+
+  it("renombra consultas simples y elimina solo bloques vacíos", () => {
+    const css = ".base { color: black; }\n@media (max-width: 600px) {\n}\n@media (min-width: 900px) { .wide { display: grid; } }";
+    const renamed = renameResponsiveBreakpoint(css, "(max-width: 600px)", "(max-width: 640px)");
+    ok(renamed.includes("@media (max-width: 640px)"));
+    equal(removeEmptyResponsiveBreakpoint(renamed, "(max-width: 640px)").includes("@media (max-width: 640px)"), false);
+    equal(removeEmptyResponsiveBreakpoint(css, "(min-width: 900px)"), css);
+    ok(css.includes("display: grid;"));
+  });
+
   it("crea la regla cuando no existe y se puede leer de vuelta", () => {
     const css = writeBox("", ".button-1", { x: 10, y: 20 });
 

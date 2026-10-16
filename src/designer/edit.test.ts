@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { applyMove, deleteNode, duplicateNode, ensureStylesheetLink, insertElement, linkedStylesheets, removeNodeAttribute, reorderNode, setNodeAttribute, setNodeText } from "./edit.ts";
-import { createIdFactory } from "./identity.ts";
+import { createIdFactory, createIdFactoryAfter } from "./identity.ts";
 import { parseMarkup } from "./parse.ts";
 import { serialize } from "./tree.ts";
+import { readBox, readDeclaration } from "./cssEdit.ts";
 
-const { equal, ok } = assert;
+const { deepEqual, equal, ok } = assert;
 
 function roots(html: string) {
   return parseMarkup(html).roots;
@@ -51,6 +52,41 @@ describe("M2.2.0 ediciones del diseñador", () => {
     const spanPos = html.indexOf("<span");
     const bPos = html.indexOf('id="b"');
     ok(spanPos > bPos, "span should be inside #b");
+  });
+
+  it("posiciona un h1 sobre su contenedor con CSS absoluto y origen relativo", () => {
+    const doc = roots('<body><div class="contenedor"><h1 class="titulo">Título</h1></div></body>');
+    const div = doc[0]?.children[0];
+    const h1 = div?.children[0];
+    ok(div !== undefined && h1 !== undefined);
+    const moved = applyMove(doc, "", {
+      nodeId: h1!.id,
+      parentId: div!.id,
+      box: { x: 84, y: 37 },
+    });
+    if (!moved.ok) throw new Error(moved.message);
+    equal(readDeclaration(moved.value.cssText, ".titulo", "position"), "absolute");
+    equal(readBox(moved.value.cssText, ".titulo")?.x, 84);
+    equal(readBox(moved.value.cssText, ".titulo")?.y, 37);
+    equal(readDeclaration(moved.value.cssText, ".contenedor", "position"), "relative");
+  });
+
+  it("mover una copia usa una clase y una caja independientes del original", () => {
+    const doc = roots('<body><div><h1 class="h1-1">Título</h1></div></body>');
+    const h1 = doc[0]?.children[0]?.children[0];
+    ok(h1 !== undefined);
+    const duplicate = duplicateNode(doc, createIdFactoryAfter(doc), h1!.id);
+    if (!duplicate.ok) throw new Error(duplicate.message);
+    const moved = applyMove(
+      doc,
+      ".h1-1 { position: absolute; left: 10px; top: 20px; }",
+      { nodeId: duplicate.value.id, parentId: duplicate.value.parentId, box: { x: 90, y: 65 } },
+    );
+    if (!moved.ok) throw new Error(moved.message);
+    const copiedBox = readBox(moved.value.cssText, ".h1-2");
+    deepEqual(copiedBox, { x: 90, y: 65 });
+    equal(readBox(moved.value.cssText, ".h1-1")?.x, 10);
+    equal(readBox(moved.value.cssText, ".h1-1")?.y, 20);
   });
 
   it("reordena elementos hermanos", () => {

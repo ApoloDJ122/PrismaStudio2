@@ -36,11 +36,11 @@ describe("M2.2.0 atributos", () => {
     equal(serialize(doc), '<div title="hello">x</div>');
   });
 
-  it("setAttribute no toca las etiquetas de contenido plano", () => {
+  it("setAttribute edita atributos de etiquetas de contenido plano sin tocar su contenido", () => {
     const doc = roots("<style>.a{}</style>");
     const el = doc[0];
     ok(el !== undefined);
-    equal(setAttribute(el!, "class", "x"), false);
-    equal(serialize(doc), "<style>.a{}</style>");
+    equal(setAttribute(el!, "media", "screen"), true);
+    equal(serialize(doc), '<style media="screen">.a{}</style>');
   });
 });

@@ -25,14 +25,25 @@ import {
 } from "../designer/edit";
 import {
   ensurePositionRelative,
+  responsiveBreakpoints,
+  readResponsiveDeclaration,
+  addResponsiveBreakpoint as addBreakpointCss,
+  renameResponsiveBreakpoint as renameBreakpointCss,
+  removeEmptyResponsiveBreakpoint as removeEmptyBreakpointCss,
   readBox,
   readDeclaration,
+  readDeclarations,
+  readInlineDeclaration,
+  readInlineDeclarations,
+  readResponsiveDeclarations,
   removeDeclaration,
+  writeResponsiveDeclaration,
+  writeInlineDeclaration,
   writeDeclaration,
 } from "../designer/cssEdit";
 import { designClassOf } from "../designer/class";
 import { removeAttribute } from "../designer/attributes";
-import { findById, serialize } from "../designer/tree";
+import { findById, htmlId, serialize } from "../designer/tree";
 import { canvasContainerId, canvasNodes as visualCanvasNodes } from "../designer/visual";
 import { createIdFactory, createIdFactoryAfter } from "../designer/identity";
 
@@ -68,6 +79,18 @@ export interface DesignerState {
   cssTarget: CssTarget | null;
   elementCssTarget: (nodeId: PrismaId) => CssTarget | null;
   cssText: string;
+  responsiveCondition: string | null;
+  responsiveBreakpoints: ReturnType<typeof responsiveBreakpoints>;
+  setResponsiveCondition: (condition: string | null) => void;
+  responsiveNodeStyle: (nodeId: PrismaId, property: string) => string | null;
+  nodeDeclarations: (nodeId: PrismaId) => { property: string; value: string }[];
+  nodeInlineStyle: (nodeId: PrismaId, property: string) => string | null;
+  nodeInlineDeclarations: (nodeId: PrismaId) => { property: string; value: string }[];
+  responsiveNodeDeclarations: (nodeId: PrismaId) => { property: string; value: string }[];
+  styleSelector: (nodeId: PrismaId) => string | null;
+  addResponsiveBreakpoint: (width: number) => void;
+  renameResponsiveBreakpoint: (condition: string, nextCondition: string) => void;
+  removeEmptyResponsiveBreakpoint: (condition: string) => void;
   selectedId: PrismaId | null;
   /** Nodo seleccionado, o `null`. */
   selectedNode: PrismaNode | null;
@@ -117,6 +140,24 @@ function shallowCloneRoots(roots: PrismaNode[]): PrismaNode[] {
   return roots.map((r) => structuredClone(r));
 }
 
+function selectorForStyle(roots: PrismaNode[], node: PrismaNode): string | null {
+  const uniqueClass = designClassOf(roots, node);
+  if (uniqueClass !== null) return `.${uniqueClass}`;
+  if (node.kind !== "element") return null;
+  if (node.tag === "body" || node.tag === "html") return node.tag;
+  const id = htmlId(node);
+  if (id === null || !/^[A-Za-z_][\w-]*$/.test(id)) return null;
+  let count = 0;
+  const visit = (nodes: PrismaNode[]) => {
+    for (const item of nodes) {
+      if (htmlId(item) === id) count += 1;
+      visit(item.children);
+    }
+  };
+  visit(roots);
+  return count === 1 ? `#${id}` : null;
+}
+
 export function useDesigner(
   projectState: ProjectState,
   options: DesignerOptions,
@@ -142,6 +183,7 @@ export function useDesigner(
   const [cssTarget, setCssTarget] = useState<CssTarget | null>(null);
   const [elementCssTargets, setElementCssTargets] = useState<Record<PrismaId, CssTarget>>({});
   const [cssText, setCssText] = useState<string>("");
+  const [responsiveCondition, setResponsiveCondition] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<PrismaId | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -533,24 +575,54 @@ export function useDesigner(
   const setNodeStyle = useCallback(
     (nodeId: PrismaId, property: string, value: string) => {
       setError(null);
-      const next = shallowCloneRoots(roots);
-      const node = findById(next, nodeId);
+      const node = findById(roots, nodeId);
       if (node === null) {
         setError("El elemento ya no está en el documento.");
         return;
       }
-      const selector = positionSelector(next, node);
-      if (selector === null) {
-        setError("Este nodo no se puede posicionar con CSS.");
+      const selector = selectorForStyle(roots, node);
+      const styleAttribute = node.attributes.find((attribute) => attribute.name.toLowerCase() === "style");
+      const inlineValue = styleAttribute?.value === null || styleAttribute?.value === undefined
+        ? null
+        : readInlineDeclaration(styleAttribute.value, property);
+      const inlineProps = styleAttribute?.value ? readInlineDeclarations(styleAttribute.value).map((item) => item.property) : [];
+      const shorthand = property.startsWith("margin-") ? "margin"
+        : property.startsWith("padding-") ? "padding"
+          : ["border-color", "border-width", "border-style"].includes(property) ? "border"
+            : ["border-top-", "border-right-", "border-bottom-", "border-left-"].some((prefix) => property.startsWith(prefix)) ? "border"
+              : property === "background-color" ? "background"
+                : ["font-family", "font-size", "font-weight", "font-style", "line-height"].includes(property) ? "font" : null;
+      if (inlineValue === null && shorthand !== null && inlineProps.includes(shorthand)) {
+        setError(`La propiedad ${property} está cubierta por el shorthand inline ${shorthand}. Modifica ese shorthand desde HTML para evitar que el cambio quede sin efecto.`);
         return;
       }
-      const nextCss = value.trim() === ""
-        ? removeDeclaration(cssTextRef.current, selector, property)
-        : writeDeclaration(cssTextRef.current, selector, property, value.trim());
+      if (responsiveCondition !== null && inlineValue !== null) {
+        setError(`La propiedad ${property} está declarada en el atributo style y prevalece sobre el breakpoint. Edita el valor inline en el estilo base antes de ajustarlo en responsive.`);
+        return;
+      }
+      if (responsiveCondition === null && inlineValue !== null && styleAttribute?.value !== null && styleAttribute?.value !== undefined) {
+        const updated = writeInlineDeclaration(styleAttribute.value, property, value);
+        const next = shallowCloneRoots(roots);
+        const result = setNodeAttributePure(next, nodeId, "style", updated);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        setRoots(next);
+        return;
+      }
+      if (selector === null) {
+        setError("No hay una clase o un id único para editar este estilo sin afectar a otros elementos. Añade una clase o un id desde HTML.");
+        return;
+      }
+      const nextCss = responsiveCondition !== null
+        ? writeResponsiveDeclaration(cssTextRef.current, responsiveCondition, selector, property, value)
+        : value.trim() === ""
+          ? removeDeclaration(cssTextRef.current, selector, property)
+          : writeDeclaration(cssTextRef.current, selector, property, value.trim());
       writeCssText(nextCss);
-      setRoots(next);
     },
-    [roots, writeCssText],
+    [roots, responsiveCondition, writeCssText],
   );
 
   /** Selector con el que el lienzo escribe el CSS de un nodo, sin crearlo. */
@@ -560,32 +632,99 @@ export function useDesigner(
       if (node === null) {
         return null;
       }
-      const unique = designClassOf(roots, node);
-      if (unique !== null) {
-        return `.${unique}`;
-      }
-      if (node.kind === "element" && (node.tag === "body" || node.tag === "html")) {
-        return node.tag;
-      }
-      return null;
+      return selectorForStyle(roots, node);
     },
     [roots],
   );
 
   const nodeStyle = useCallback(
     (nodeId: PrismaId, property: string): string | null => {
+      const node = findById(roots, nodeId);
+      const inline = node?.attributes.find((attribute) => attribute.name.toLowerCase() === "style")?.value;
+      if (inline !== null && inline !== undefined) {
+        const value = readInlineDeclaration(inline, property);
+        if (value !== null) return value;
+      }
       const selector = styleSelectorOf(nodeId);
       return selector === null ? null : readDeclaration(cssText, selector, property);
     },
-    [cssText, styleSelectorOf],
+    [cssText, roots, styleSelectorOf],
   );
+
+  const responsiveNodeStyle = useCallback(
+    (nodeId: PrismaId, property: string): string | null => {
+      if (responsiveCondition === null) return nodeStyle(nodeId, property);
+      const selector = styleSelectorOf(nodeId);
+      return selector === null ? null : readResponsiveDeclaration(cssText, responsiveCondition, selector, property);
+    },
+    [cssText, nodeStyle, responsiveCondition, styleSelectorOf],
+  );
+
+  const nodeDeclarations = useCallback((nodeId: PrismaId) => {
+    const selector = styleSelectorOf(nodeId);
+    const css = selector === null ? [] : readDeclarations(cssText, selector);
+    const node = findById(roots, nodeId);
+    const inline = node?.attributes.find((attribute) => attribute.name.toLowerCase() === "style")?.value;
+    return [...css, ...(inline ? readInlineDeclarations(inline) : [])];
+  }, [cssText, roots, styleSelectorOf]);
+
+  const nodeInlineStyle = useCallback((nodeId: PrismaId, property: string) => {
+    const node = findById(roots, nodeId);
+    const inline = node?.attributes.find((attribute) => attribute.name.toLowerCase() === "style")?.value;
+    return inline === null || inline === undefined ? null : readInlineDeclaration(inline, property);
+  }, [roots]);
+
+  const nodeInlineDeclarations = useCallback((nodeId: PrismaId) => {
+    const node = findById(roots, nodeId);
+    const inline = node?.attributes.find((attribute) => attribute.name.toLowerCase() === "style")?.value;
+    return inline === null || inline === undefined ? [] : readInlineDeclarations(inline);
+  }, [roots]);
+
+  const responsiveNodeDeclarations = useCallback((nodeId: PrismaId) => {
+    if (responsiveCondition === null) return nodeDeclarations(nodeId);
+    const selector = styleSelectorOf(nodeId);
+    return selector === null ? [] : readResponsiveDeclarations(cssText, responsiveCondition, selector);
+  }, [cssText, nodeDeclarations, responsiveCondition, styleSelectorOf]);
+
+  const addResponsiveBreakpoint = useCallback((width: number) => {
+    const next = addBreakpointCss(cssTextRef.current, width);
+    if (next !== cssTextRef.current) writeCssText(next);
+  }, [writeCssText]);
+
+  const renameResponsiveBreakpoint = useCallback((condition: string, nextCondition: string) => {
+    const next = renameBreakpointCss(cssTextRef.current, condition, nextCondition.trim());
+    if (next !== cssTextRef.current) {
+      writeCssText(next);
+      if (responsiveCondition === condition) setResponsiveCondition(nextCondition.trim());
+    }
+  }, [responsiveCondition, writeCssText]);
+
+  const removeEmptyResponsiveBreakpoint = useCallback((condition: string) => {
+    const next = removeEmptyBreakpointCss(cssTextRef.current, condition);
+    if (next !== cssTextRef.current) {
+      writeCssText(next);
+      if (responsiveCondition === condition) setResponsiveCondition(null);
+    }
+  }, [responsiveCondition, writeCssText]);
 
   const nodeBox = useCallback(
     (nodeId: PrismaId): { x: number; y: number } | null => {
       const selector = styleSelectorOf(nodeId);
-      return selector === null ? null : readBox(cssText, selector);
+      if (selector === null) return null;
+      const base = readBox(cssText, selector);
+      if (responsiveCondition === null) return base;
+      const responsiveCoordinate = (property: "left" | "top", fallback: number): number => {
+        const value = readResponsiveDeclaration(cssText, responsiveCondition, selector, property);
+        const match = value === null ? null : /^(-?\d+(?:\.\d+)?)px$/i.exec(value.trim());
+        return match?.[1] === undefined ? fallback : Number(match[1]);
+      };
+      if (base === null) return null;
+      return {
+        x: responsiveCoordinate("left", base.x),
+        y: responsiveCoordinate("top", base.y),
+      };
     },
-    [cssText, styleSelectorOf],
+    [cssText, responsiveCondition, styleSelectorOf],
   );
 
   const selectedNode = useMemo(
@@ -846,6 +985,9 @@ export function useDesigner(
     cssTarget,
     elementCssTarget,
     cssText,
+    responsiveCondition,
+    responsiveBreakpoints: responsiveBreakpoints(cssText),
+    setResponsiveCondition,
     selectedId,
     selectedNode,
     canvasNodes: visibleCanvasNodes,
@@ -871,6 +1013,15 @@ export function useDesigner(
     setBooleanAttr,
     setNodeStyle,
     nodeStyle,
+    responsiveNodeStyle,
+    nodeDeclarations,
+    nodeInlineStyle,
+    nodeInlineDeclarations,
+    responsiveNodeDeclarations,
+    styleSelector: styleSelectorOf,
+    addResponsiveBreakpoint,
+    renameResponsiveBreakpoint,
+    removeEmptyResponsiveBreakpoint,
     nodeBox,
     selectCssTarget,
     useDefaultCssTarget,

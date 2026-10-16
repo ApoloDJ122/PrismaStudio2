@@ -108,12 +108,12 @@ describe("M2.2.0 clases de diseñador", () => {
     equal(serialize(document), '<div title="a > b" class="div-1">x</div>');
   });
 
-  it("no toca las etiquetas de contenido plano", () => {
+  it("no añade clases automáticas a etiquetas de contenido plano", () => {
     const document = roots("<style>.a { color: red; }</style>");
     const style = document[0];
 
     ok(style !== undefined);
-    equal(setAttribute(style!, "class", "x"), false);
+    equal(appendClassName(style!, "x"), false);
     equal(serialize(document), "<style>.a { color: red; }</style>");
   });
 
